@@ -1,0 +1,147 @@
+#										#
+#		TPM 2.0 Attestation - common makefile				#
+#			     Written by Ken Goldman				#
+#		       IBM Thomas J. Watson Research Center			#
+#	      $Id: makefile-common20 1235 2018-05-30 20:05:39Z kgoldman $		#
+#										#
+# (c) Copyright IBM Corporation 2018						#
+# 										#
+# All rights reserved.								#
+# 										#
+# Redistribution and use in source and binary forms, with or without		#
+# modification, are permitted provided that the following conditions are	#
+# met:										#
+# 										#
+# Redistributions of source code must retain the above copyright notice,	#
+# this list of conditions and the following disclaimer.				#
+# 										#
+# Redistributions in binary form must reproduce the above copyright		#
+# notice, this list of conditions and the following disclaimer in the		#
+# documentation and/or other materials provided with the distribution.		#
+# 										#
+# Neither the names of the IBM Corporation nor the names of its			#
+# contributors may be used to endorse or promote products derived from		#
+# this software without specific prior written permission.			#
+# 										#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS		#
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT		#
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR		#
+# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT		#
+# HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,	#
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT		#
+# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,		#
+# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY		#
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT		#
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE		#
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.		#
+#										#
+
+CC = /usr/bin/gcc 
+
+# clients and server
+
+CCFLAGS +=  -Wall -W -Wmissing-declarations -Wmissing-prototypes -Wnested-externs \
+		-c -ggdb -O0 -DUNIX -DTPM_POSIX					\
+		-I../utils							\
+		-DTPM_TPM20
+
+# linker flags
+
+LNFLAGS = 	-ggdb -pg	\
+		-DTPM_POSIX
+
+# linker libraries
+
+LNLIBS += 	-L. -L../utils -l$(LIBTSS) -l$(LIBTSSUTILS) -lcrypto 	\
+		-ljson-c
+
+# server only libraries
+
+LNSLIBS = 	-L/usr/lib64/mysql -lmysqlclient	
+
+clientenroll:	clientenroll.o clientlocal.o \
+		clientjson.o commonjson.o clientsocket.o commonutils.o \
+		commoncrypto.o commontss.o \
+		$(TSSA_OBJS)
+
+		/usr/bin/gcc $(LNFLAGS) \
+		clientenroll.o clientlocal.o \
+		clientjson.o commonjson.o clientsocket.o commonutils.o \
+		commoncrypto.o commontss.o \
+		$(TSSA_OBJS) $(LNLIBS) \
+		-o clientenroll
+
+client:		client.o clientlocal.o \
+		clientjson.o commonjson.o clientsocket.o commonutils.o \
+		commontss.o \
+		$(TSSA_OBJS)
+
+		/usr/bin/gcc $(LNFLAGS) \
+		client.o clientlocal.o \
+		clientjson.o commonjson.o clientsocket.o commonutils.o \
+		commontss.o \
+		$(TSSA_OBJS) $(LNLIBS) \
+		-o client
+
+server: 	server.o serversocket.o serverjson.o commonjson.o serversql.o \
+		commonutils.o commoncrypto.o commontss.o \
+		serverbc.o \
+		clientsocket.o clientjson.o
+
+		/usr/bin/gcc $(LNFLAGS) \
+		server.o serversocket.o serverjson.o commonjson.o serversql.o \
+		commonutils.o commoncrypto.o  commontss.o \
+		serverbc.o \
+		clientsocket.o clientjson.o \
+		$(LNLIBS) $(LNSLIBS) \
+		-o server
+
+/var/www/html/acs/demo.css:	demo.css
+		cp demo.css	/var/www/html/acs/demo.css
+/var/www/html/acs/cert.png:	cert.png
+		cp cert.png	/var/www/html/acs/cert.png
+/var/www/html/acs/ibm.png:	ibm.png
+		cp ibm.png	/var/www/html/acs/ibm.png
+/var/www/html/acs/green.png:	green.png
+		cp green.png	/var/www/html/acs/green.png
+/var/www/html/acs/red.png:	red.png
+		cp red.png	/var/www/html/acs/red.png
+
+/var/www/html/acs/navigation.php:	navigation.php
+		cp navigation.php	/var/www/html/acs/navigation.php 
+/var/www/html/acs/dbconnect.php:	dbconnect.php
+		cp dbconnect.php	/var/www/html/acs/dbconnect.php 
+/var/www/html/acs/header.php:		header.php
+		cp header.php		/var/www/html/acs/header.php 
+/var/www/html/acs/footer.php:		footer.php
+		cp footer.php		/var/www/html/acs/footer.php 
+/var/www/html/acs/index.php:		index.php
+		cp index.php 		/var/www/html/acs/index.php
+/var/www/html/acs/machines.php:		machines.php
+		cp machines.php 	/var/www/html/acs/machines.php
+/var/www/html/acs/report.php:		report.php
+		cp report.php 		/var/www/html/acs/report.php
+/var/www/html/acs/reports.php:		reports.php
+		cp reports.php 		/var/www/html/acs/reports.php
+/var/www/html/acs/bios.php:		bios.php
+		cp bios.php 		/var/www/html/acs/bios.php
+/var/www/html/acs/biosevent.php:	biosevent.php
+		cp biosevent.php 	/var/www/html/acs/biosevent.php
+/var/www/html/acs/ima.php:		ima.php
+		cp ima.php 		/var/www/html/acs/ima.php
+/var/www/html/acs/imaevent.php:		imaevent.php
+		cp imaevent.php 	/var/www/html/acs/imaevent.php
+/var/www/html/acs/pcrinvalid.php:	pcrinvalid.php
+		cp pcrinvalid.php 	/var/www/html/acs/pcrinvalid.php
+/var/www/html/acs/ekcertificate.php:	ekcertificate.php
+		cp ekcertificate.php 	/var/www/html/acs/ekcertificate.php
+/var/www/html/acs/akcertificate.php:	akcertificate.php
+		cp akcertificate.php 	/var/www/html/acs/akcertificate.php
+/var/www/html/acs/chaincode.php:	chaincode.php
+		cp chaincode.php 	/var/www/html/acs/chaincode.php
+
+%.o:		%.c
+		$(CC) $(CCFLAGS) $< -o $@
+
+clean:
+		rm -f *.o $(ALL)
