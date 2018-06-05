@@ -2,7 +2,7 @@
 #		TPM 2.0 and TPM 1.2 Attestation - common makefile		#
 #			     Written by Ken Goldman				#
 #		       IBM Thomas J. Watson Research Center			#
-#	      $Id: makefile-common 1235 2018-05-30 20:05:39Z kgoldman $		#
+#	      $Id: makefile-common 1238 2018-06-05 21:14:55Z kgoldman $		#
 #										#
 # (c) Copyright IBM Corporation 2018						#
 # 										#
@@ -43,6 +43,7 @@ CC = /usr/bin/gcc
 CCFLAGS +=  -Wall -W -Wmissing-declarations -Wmissing-prototypes -Wnested-externs \
 		-c -ggdb -O0 -DUNIX -DTPM_POSIX					\
 		-I../utils	\
+		-DTPM_TPM20 	\
 		-I../utils12	\
 		-DUNIX 		\
 		-DTPM_POSIX	\
@@ -57,8 +58,12 @@ LNFLAGS = 	-ggdb -pg	\
 		-DTPM_POSIX
 
 # linker libraries
+# may require 
+# setenv LIBRARY_PATH [path to]/tpm2/utils:[path to]/tpm2/utils12
+# setenv LD_LIBRARY_PATH [path to]/tpm2/utils
 
-LNLIBS += 	-L. -L../utils -l$(LIBTSS) -l$(LIBTSSUTILS) -lcrypto 	\
+LNLIBS += 	-L. -L../utils  -L../utils12 					\
+		-l$(LIBTSS) -l$(LIBTSSUTILS) -l$(LIBTSSUTILS12) -lcrypto	\
 		-ljson-c
 
 # server only libraries
@@ -90,14 +95,12 @@ client:		client.o clientlocal.o \
 		-o client
 
 clientenroll12:	clientenroll12.o  	\
-		../utils12/ekutils12.o 	\
 		clientjson.o clientjson12.o commonjson.o clientsocket.o commonutils.o \
 		commoncrypto.o commontss12.o \
 		$(TSSA_OBJS)
 
 		/usr/bin/gcc $(LNFLAGS)	\
 		clientenroll12.o  	\
-		../utils12/ekutils12.o  \
 		clientjson.o clientjson12.o commonjson.o clientsocket.o commonutils.o \
 		commoncrypto.o commontss12.o \
 		$(TSSA_OBJS) $(LNLIBS) \
@@ -169,10 +172,10 @@ server: 	server.o serversocket.o serverjson.o commonjson.o serversql.o \
 		cp akcertificate.php 	/var/www/html/acs/akcertificate.php
 
 server.o: 	$(TSS_HEADERS) server.c
-		$(CC) $(CCFLAGS) -DTPM_TPM20 -DTPM_TPM12 server.c
+		$(CC) $(CCFLAGS) -DTPM_TPM12 server.c
 
 clientjson.o: 	$(TSS_HEADERS) clientjson.c
-		$(CC) $(CCFLAGS) -DTPM_TPM20 clientjson.c
+		$(CC) $(CCFLAGS) clientjson.c
 
 %.o:		%.c
 		$(CC) $(CCFLAGS) $< -o $@

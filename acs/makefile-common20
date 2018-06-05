@@ -2,7 +2,7 @@
 #		TPM 2.0 Attestation - common makefile				#
 #			     Written by Ken Goldman				#
 #		       IBM Thomas J. Watson Research Center			#
-#	      $Id: makefile-common20 1235 2018-05-30 20:05:39Z kgoldman $		#
+#	      $Id: makefile-common20 1238 2018-06-05 21:14:55Z kgoldman $	#
 #										#
 # (c) Copyright IBM Corporation 2018						#
 # 										#
@@ -51,6 +51,9 @@ LNFLAGS = 	-ggdb -pg	\
 		-DTPM_POSIX
 
 # linker libraries
+# may require 
+# setenv LIBRARY_PATH [path to]/tpm2/utils
+# setenv LD_LIBRARY_PATH [path to]/tpm2/utils
 
 LNLIBS += 	-L. -L../utils -l$(LIBTSS) -l$(LIBTSSUTILS) -lcrypto 	\
 		-ljson-c
@@ -85,13 +88,11 @@ client:		client.o clientlocal.o \
 
 server: 	server.o serversocket.o serverjson.o commonjson.o serversql.o \
 		commonutils.o commoncrypto.o commontss.o \
-		serverbc.o \
 		clientsocket.o clientjson.o
 
 		/usr/bin/gcc $(LNFLAGS) \
 		server.o serversocket.o serverjson.o commonjson.o serversql.o \
 		commonutils.o commoncrypto.o  commontss.o \
-		serverbc.o \
 		clientsocket.o clientjson.o \
 		$(LNLIBS) $(LNSLIBS) \
 		-o server
@@ -137,8 +138,6 @@ server: 	server.o serversocket.o serverjson.o commonjson.o serversql.o \
 		cp ekcertificate.php 	/var/www/html/acs/ekcertificate.php
 /var/www/html/acs/akcertificate.php:	akcertificate.php
 		cp akcertificate.php 	/var/www/html/acs/akcertificate.php
-/var/www/html/acs/chaincode.php:	chaincode.php
-		cp chaincode.php 	/var/www/html/acs/chaincode.php
 
 %.o:		%.c
 		$(CC) $(CCFLAGS) $< -o $@

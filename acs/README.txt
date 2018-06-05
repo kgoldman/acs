@@ -1,4 +1,4 @@
-$Id: README.txt 1230M 2018-06-01 16:54:24Z (local) $
+$Id: README.txt 1238 2018-06-05 21:14:55Z kgoldman $
 Written by Ken Goldman
 IBM Thomas J. Watson Research Center
 
@@ -118,20 +118,17 @@ https://sourceforge.net/projects/ibmtpm20tss/
 
 	> make -f makefiletpm12
 
-3 - Since the TSS is not "installed", the ACS programs must be pointed
-to the TSS library.  When the TSS is installed in /usr/lib as part of
-a distribution, this step becomes unnecessary.
+3 - Since the TSS is not "installed", the ACS programs must point
+to the TSS library [path].  When the TSS is installed in /usr/lib as
+part of a distribution, this step becomes unnecessary.
 
 csh variants
 
-> setenv LD_LIBRARY_PATH ../utils
+> setenv LD_LIBRARY_PATH [path]/tpm2/utils
 
 bash variants
 
-> export LD_LIBRARY_PATH=../utils
-
-Replace ../utils as appropriate if the directory structure is
-different.
+> export LD_LIBRARY_PATH=[path]/tpm2/utils
 
 4 - Attestation demo
 
@@ -142,20 +139,31 @@ different.
 
 > cd .../tpm2/acs
 
-For TPM 2.0
+For TPM 2.0 client and server
 
 > make
 
-	The makefile assumes that the TSS library libtss.so is in
-	../utils and makes a link.  If the TSS is installed somewhere
-	else, either copy libtss.so here or make a link to it.
+For TPM 1.2 client (requires TPM 1.2 / TPM 2.0 server)
 
-The server supports TPM 1.2 and TPM 2.0.
+> make -f makefiletpm12
 
-For additional TPM 1.2 client
+For TPM 1.2 and TPM 2.0 client and TPM 1.2 / TPM 2.0 server
 
-	> make -f makefiletpm12
+> make -f makefiletpmc
+	
+	These notes are not required once the TSS is instlled in the
+	system area through a package manager.
 
+	The makefile assumes that the TSS include and library
+	directories are in ../utils.  If not, specify that [path].
+
+	> setenv CPATH [path-to]/tpm2/utils
+	> setenv LIBRARY_PATH [path-to]/tpm2/utils
+
+	For TPM 1.2
+
+	> setenv CPATH [path-to]/tpm2/utils:[path-to]/tpm2/utils12
+	
 
 
 Provision the RSA EK Certificate CA Signing Key

@@ -2,7 +2,7 @@
 #		TPM 1.2 Attestation - common makefile				#
 #			     Written by Ken Goldman				#
 #		       IBM Thomas J. Watson Research Center			#
-#	      $Id: makefile-common12 1235 2018-05-30 20:05:39Z kgoldman $	#
+#	      $Id: makefile-common12 1238 2018-06-05 21:14:55Z kgoldman $	#
 #										#
 # (c) Copyright IBM Corporation 2018						#
 # 										#
@@ -38,7 +38,10 @@
 
 CC = /usr/bin/gcc 
 
-# clients and server
+# TPM 1.2 clients
+
+# may require 
+# setenv CPATH [path to]/utils:[path to]/tpm2/utils12
 
 CCFLAGS +=  -Wall -W -Wmissing-declarations -Wmissing-prototypes -Wnested-externs \
 		-c -ggdb -O0  -DTPM_POSIX	\
@@ -52,27 +55,25 @@ CCFLAGS +=  -Wall -W -Wmissing-declarations -Wmissing-prototypes -Wnested-extern
 
 # linker flags
 
-LNFLAGS = 	-ggdb -pg			\
+LNFLAGS = 	-ggdb -pg	\
 		-DTPM_POSIX
 
 # linker libraries
+# may require 
+# setenv LIBRARY_PATH [path to]/tpm2/utils:[path to]/tpm2/utils12
+# setenv LD_LIBRARY_PATH [path to]/tpm2/utils
 
-LNLIBS += 	-L. -L../utils -l$(LIBTSS)  -l$(LIBTSSUTILS) -lcrypto 	\
+LNLIBS += 	-L. -L../utils -L../utils12 					\
+		-l$(LIBTSS) -l$(LIBTSSUTILS) -l$(LIBTSSUTILS12) -lcrypto 	\
 		-ljson-c
 
-# server only libraries
-
-LNSLIBS = 	-L/usr/lib64/mysql -lmysqlclient	
-
 clientenroll12:	clientenroll12.o  	\
-		../utils12/ekutils12.o 	\
 		clientjson.o clientjson12.o commonjson.o clientsocket.o commonutils.o \
 		commoncrypto.o commontss12.o \
 		$(TSSA_OBJS)
 
 		/usr/bin/gcc $(LNFLAGS)	\
 		clientenroll12.o  	\
-		../utils12/ekutils12.o  \
 		clientjson.o clientjson12.o commonjson.o clientsocket.o commonutils.o \
 		commoncrypto.o commontss12.o \
 		$(TSSA_OBJS) $(LNLIBS) \
@@ -89,19 +90,6 @@ client12:	client12.o \
 		commontss12.o \
 		$(TSSA_OBJS) $(LNLIBS) \
 		-o client12
-
-server: 	server.o serversocket.o serverjson.o commonjson.o serversql.o \
-		commonutils.o commoncrypto.o commontss.o \
-		serverbc.o \
-		clientsocket.o clientjson.o
-
-		/usr/bin/gcc $(LNFLAGS) \
-		server.o serversocket.o serverjson.o commonjson.o serversql.o \
-		commonutils.o commoncrypto.o  commontss.o \
-		serverbc.o \
-		clientsocket.o clientjson.o \
-		$(LNLIBS) $(LNSLIBS) \
-		-o server
 
 /var/www/html/acs/demo.css:	demo.css
 		cp demo.css	/var/www/html/acs/demo.css

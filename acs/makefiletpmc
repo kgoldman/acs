@@ -2,7 +2,7 @@
 #		TPM 1.2 Attestation - client and server makefile		#
 #			     Written by Ken Goldman				#
 #		       IBM Thomas J. Watson Research Center			#
-#	      $Id: makefiletpmc 1235 2018-05-30 20:05:39Z kgoldman $		#
+#	      $Id: makefiletpmc 1238 2018-06-05 21:14:55Z kgoldman $		#
 #										#
 # (c) Copyright IBM Corporation 2018						#
 # 										#
@@ -52,6 +52,7 @@ all:	$(ALL)
 
 LIBTSS = ibmtss
 LIBTSSUTILS = ibmtssutils
+LIBTSSUTILS12 = ibmtssutils12
 
 CCFLAGS = 
 
