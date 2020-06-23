@@ -3,9 +3,9 @@
 /*		TPM 2.0 Attestation - Server JSON Handler   			*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: serverjson.c 1159 2018-04-17 15:10:01Z kgoldman $		*/
+/*            $Id: serverjson.c 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016, 2017.					*/
+/* (c) Copyright IBM Corporation 2016 - 2020.					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -59,8 +59,6 @@ extern int vverbose;
 
 */
 
-/* FIXME should do some sanity checking of the command length */
-
 uint32_t JS_Cmd_GetCommand(const char **commandString,
 			   json_object **cmdJson,
 			   const char *cmdBuffer,
@@ -79,10 +77,35 @@ uint32_t JS_Cmd_GetCommand(const char **commandString,
 	}
     }
     if (rc == 0) {
-	rc = JS_ObjectGetString(commandString, "command", *cmdJson);
+	rc = JS_ObjectGetString(commandString, "command", ACS_JSON_COMMAND_MAX, *cmdJson);
     }
     if (rc == 0) {
 	if (vverbose) printf("JS_Command_GetCommand: %s\n", *commandString);
+    }
+    return rc;
+}
+
+/* JS_Cmd_GetLittleEndian() gets the boolean littleEndian flag from the json littleendian key */
+
+uint32_t JS_Cmd_GetLittleEndian(int *littleEndian,
+				json_object *cmdJson)
+{
+    uint32_t  rc = 0;
+    const char *littleEndianString;
+    
+    if (rc == 0) {
+	rc = JS_ObjectGetString(&littleEndianString, "littleendian", ACS_JSON_BOOL_MAX, cmdJson);
+    }
+    if (rc == 0) {
+	if (strcmp(littleEndianString, "1") == 0) {
+	    *littleEndian = TRUE;
+	}
+	else if (strcmp(littleEndianString, "0") == 0) {
+	    *littleEndian = FALSE;
+	}
+	else {
+	    rc = ACE_HEXASCII;
+	}
     }
     return rc;
 }
@@ -101,22 +124,18 @@ uint32_t JS_Cmd_GetPCR(const char **pcrSha1String,
     char objName[12];
     if ((rc == 0) && (pcrSha1String != NULL)) {
 	sprintf(objName, "pcr%usha1", pcrNum);
-	rc = JS_ObjectGetString(pcrSha1String,
-				objName,
-				cmdJson);
+	rc = JS_ObjectGetString(pcrSha1String, objName, ACS_JSON_HASH_MAX, cmdJson);
     }
     if ((rc == 0)  && (pcrSha256String!= NULL)) {
 	sprintf(objName, "pcr%usha256", pcrNum);
-	rc = JS_ObjectGetString(pcrSha256String,
-				objName,
-				cmdJson);
+	rc = JS_ObjectGetString(pcrSha256String, objName, ACS_JSON_HASH_MAX, cmdJson);
     }
     return rc;
 }
 
 /* JS_Cmd_GetEvent() gets an event based on the event number eventNum */
 
-uint32_t JS_Cmd_GetEvent(const char **eventString,
+uint32_t JS_Cmd_GetEvent(char **eventString,	/* freed by caller */
 			 unsigned int eventNum,
 			 json_object *cmdJson)
 {
@@ -124,14 +143,31 @@ uint32_t JS_Cmd_GetEvent(const char **eventString,
     /* json_object *eventJson = NULL; */
     char objName[12];			/* FIXME */
     sprintf(objName, "event%u", eventNum);
+    /* no check for maximum size, truncated before DB insert */
     if (rc == 0) {
-	rc = JS_ObjectGetString(eventString,
-				objName,
-				cmdJson);
+	rc = JS_ObjectGetStringMalloc(eventString, objName, ACS_JSON_EVENT_MAX, cmdJson);
     }
     return rc;
 }
 
+/* JS_Cmd_GetImaEvent() gets an event based on the event number eventNum */
+
+uint32_t JS_Cmd_GetImaEvent(char **eventString,	/* freed by caller */
+			    unsigned int eventNum,
+			    json_object *cmdJson)
+{
+    uint32_t  rc = 0;
+    /* json_object *eventJson = NULL; */
+    char objName[12];			/* FIXME */
+    sprintf(objName, "imaevent%u", eventNum);
+    /* no check for maximum size, truncated before DB insert */
+    if (rc == 0) {
+	rc = JS_ObjectGetStringMalloc(eventString, objName, ACS_JSON_EVENT_MAX, cmdJson);
+    }
+    return rc;
+}
+
+#if 0
 /* JS_Cmd_GetImaEntry() gets an the imaentry value as an unsigned int */
 
 uint32_t JS_Cmd_GetImaEntry(unsigned int *imaEntry,
@@ -141,7 +177,7 @@ uint32_t JS_Cmd_GetImaEntry(unsigned int *imaEntry,
     const char *imaEntryString = NULL;
     
     if (rc == 0) {
-	rc = JS_ObjectGetString(&imaEntryString, "imaentry", cmdJson);
+	rc = JS_ObjectGetString(&imaEntryString, "imaentry", ACS_JSON_EVENTNUM_MAX, cmdJson);
     }
     if (rc == 0) {
 	sscanf(imaEntryString, "%u", imaEntry);
@@ -149,6 +185,7 @@ uint32_t JS_Cmd_GetImaEntry(unsigned int *imaEntry,
     return rc;
 }
 
+#endif
 /* JS_StringToArray() converts a hexascii string to a byte array
 
    The string length must be exactly twice the array length.

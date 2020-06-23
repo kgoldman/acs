@@ -3,9 +3,8 @@
 /*		TPM 1.2 Attestation - Client Side Enrollment			*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: clientenroll12.c 1201 2018-05-04 19:38:41Z kgoldman $	*/
 /*										*/
-/* (c) Copyright IBM Corporation 2018						*/
+/* (c) Copyright IBM Corporation 2018 - 2019					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -55,10 +54,10 @@
 
 #include <json/json.h>
 
-#include <tss2/tss.h>
-#include <tss2/tpmstructures12.h>
-#include <tss2/tssmarshal12.h>
-#include <tss2/tssresponsecode.h>
+#include <ibmtss/tss.h>
+#include <ibmtss/tpmstructures12.h>
+#include <ibmtss/tssmarshal12.h>
+#include <ibmtss/tssresponsecode.h>
 
 #include "config.h"
 
@@ -76,11 +75,11 @@
 #include "commonerror.h"
 
 #if 0
-#include <tss2/tssutils.h>
-#include <tss2/tssfile.h>
-#include <tss2/tssprint.h>
-#include <tss2/tssmarshal.h>
-#include <tss2/Unmarshal_fp.h>
+#include <ibmtss/tssutils.h>
+#include <ibmtss/tssfile.h>
+#include <ibmtss/tssprint.h>
+#include <ibmtss/tssmarshal.h>
+#include <ibmtss/Unmarshal_fp.h>
 
 #include "commoncrypto.h"
 #include "commontss.h"
@@ -300,7 +299,7 @@ int main(int argc, char *argv[])
     /* if enrollment is successful, save the key */
     if ((rc == 0) && !requestOnly) {
         rc = TSS_File_WriteStructure(&attestKey,
-                                     (MarshalFunction_t)TSS_TPM_KEY12_Marshal,
+                                     (MarshalFunction_t)TSS_TPM_KEY12_Marshalu,
                                      aikFullName);
     }
     JS_ObjectFree(enrollResponseJson);		/* @1 */
@@ -321,11 +320,9 @@ int main(int argc, char *argv[])
    /// @param[out] tpmVendor Input is a minimum 5 char array, output is NUL terminated TPM Vendor
    /// @param[out] ekCertLength Byte length of ekCertificate
    /// @param[out] ekCertificate marshaled EK Certificate, buffer must be freed by caller
-   /// @param[out] attestPriv Attestation private key
-   /// @param[out] attestPub Attestation public key
-   /// @param[out] attestPubLength Byte length of attestPubBin
-   /// @param[out] attestPubBin Buffer containing marshalled TPMT_PUBLIC attestation public key,
-   buffer must be freed by caller
+   /// @param[out] attestKey Attestation key pair
+   /// @param[in] srkPassword password for the SRK
+   /// @param[in] ownerPassword password for the owner
    /// @param[in] nvIndex TPM Index of the EK certificate
    */
 
@@ -435,7 +432,7 @@ static TPM_RC sendEnrollRequest(json_object **enrollResponseJson,	/* freed by ca
 	written = 0;
 	buffer = marshaled;
 	size = sizeof(marshaled);
-	rc = TSS_TPM_KEY12_PUBKEY_Marshal(attestKey, &written, &buffer, &size);
+	rc = TSS_TPM_KEY12_PUBKEY_Marshalu(attestKey, &written, &buffer, &size);
     }
     /* convert the Attestation public key to string */
     if (rc == 0) {
@@ -509,12 +506,12 @@ static TPM_RC processEnrollResponse(json_object **enrollCertResponseJson,
     /* FIXME check for error response */
     const char *response = NULL;
     if (rc == 0) {
-	rc = JS_ObjectGetString(&response, "response", enrollResponseJson);
+	rc = JS_ObjectGetString(&response, "response", ACS_JSON_COMMAND_MAX, enrollResponseJson);
     }
     /* get the credential blob */
     const char *credentialBlob = NULL;
     if (rc == 0) {
-	rc = JS_ObjectGetString(&credentialBlob, "credentialblob", enrollResponseJson);
+	rc = JS_ObjectGetString(&credentialBlob, "credentialblob", ACS_JSON_CREDENTIALBLOB_MAX, enrollResponseJson);
     }
     /* convert the credentialblob to binary */
     unsigned char 	*credentialBlobBin = NULL;
@@ -598,12 +595,12 @@ static TPM_RC processEnrollCertResponse(const char *certificateFilename,
     /* FIXME check for error response */
     const char *response = NULL;
     if (rc == 0) {
-	rc = JS_ObjectGetString(&response, "response", enrollCertResponseJson);
+	rc = JS_ObjectGetString(&response, "response", ACS_JSON_COMMAND_MAX, enrollCertResponseJson);
     }
     /* get the AK certificate */
     const char *akCertPemString = NULL;
     if (rc == 0) {
-	rc = JS_ObjectGetString(&akCertPemString, "akcert", enrollCertResponseJson);
+	rc = JS_ObjectGetString(&akCertPemString, "akcert", ACS_JSON_PEMCERT_MAX, enrollCertResponseJson);
     }
     /* write the certificate to a file first, because openssl operates on PEM files */
     if (rc == 0) {
@@ -789,9 +786,10 @@ static TPM_RC recoverAttestationKeyChallenge(TPM2B_DIGEST 	*certInfo,
     if (rc == 0) {
 	activateIdentityIn.idKeyHandle = loadKey2Out.inkeyHandle;
 	activateIdentityIn.blobSize = credentialBlobBinSize;
-	if (credentialBlobBinSize != sizeof(activateIdentityIn.blob)) {
+	if (credentialBlobBinSize > sizeof(activateIdentityIn.blob)) {
 	    printf("ERROR: recoverAttestationKeyChallenge: credentialBlobBinSize %u not %u\n",
-		   (unsigned int)credentialBlobBinSize, (unsigned int)sizeof(activateIdentityIn.blob));
+		   (unsigned int)credentialBlobBinSize,
+		   (unsigned int)sizeof(activateIdentityIn.blob));
 	    rc = ACE_BAD_BLOB;
 	}
     }
@@ -812,7 +810,8 @@ static TPM_RC recoverAttestationKeyChallenge(TPM2B_DIGEST 	*certInfo,
 	    /* range check */
 	    if (activateIdentityOut.symmetricKey.size > sizeof(certInfo->t.buffer)) {
 		printf("ERROR: recoverAttestationKeyChallenge: symmetric key %u larger than %u\n",
-		       activateIdentityOut.symmetricKey.size, (unsigned int)sizeof(sizeof(certInfo->t.buffer)));
+		       activateIdentityOut.symmetricKey.size,
+		       (unsigned int)sizeof(sizeof(certInfo->t.buffer)));
 		rc = ACE_BAD_BLOB;
 	    }
 	    certInfo->t.size = activateIdentityOut.symmetricKey.size;

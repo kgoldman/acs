@@ -3,9 +3,9 @@
 /*			TPM 2.0 Attestation - Configuration     		*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: config.h 1167 2018-04-18 18:38:04Z kgoldman $		*/
+/*            $Id: config.h 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016.						*/
+/* (c) Copyright IBM Corporation 2016 - 2020					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -40,7 +40,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include <tss2/tss.h>
+#include <ibmtss/tss.h>
 
 /* the same value Windows 10 uses */
 #define SRK_HANDLE 0x81000001
@@ -79,7 +79,8 @@
 typedef struct {
     UINT32		count;			/* number of digests for this bank */
     TPMI_ALG_HASH	hash;			/* the hash algorithm associated with the bank */
-    TPM2B_DIGEST	digests[IMPLEMENTATION_PCR];	/* a list of digests */
+    uint32_t		pcrUpdateCounter[IMPLEMENTATION_PCR];	/* an array of counts */
+    TPM2B_DIGEST	digests[IMPLEMENTATION_PCR];	/* an array of digests */
 } TPML_PCR_BANK;
 
 /* all PCRs for all banks */
@@ -88,6 +89,10 @@ typedef struct {
     UINT32		count;			/* number of banks */
     TPML_PCR_BANK	pcrBank[HASH_COUNT];
 } TPML_PCR_BANKS;
+
+/*
+  audit requires the pcrUpdateCounter
+*/
 
 #ifdef TPM_TPM12
 

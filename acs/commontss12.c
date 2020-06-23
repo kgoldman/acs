@@ -3,9 +3,9 @@
 /*		TPM 2.0 Attestation - Common TSS Functions	  		*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: commontss12.c 1183 2018-04-27 16:58:25Z kgoldman $		*/
+/*            $Id: commontss12.c 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016, 2017.					*/
+/* (c) Copyright IBM Corporation 2016 - 2020.					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -42,12 +42,12 @@
 #include <string.h>
 #include <stdint.h>
 
-#include <tss2/tss.h>
-#include <tss2/tssutils.h>
-#include <tss2/tssprint.h>
-#include <tss2/tssresponsecode.h>
-#include <tss2/tssmarshal.h>
-#include <tss2/Unmarshal_fp.h>
+#include <ibmtss/tss.h>
+#include <ibmtss/tssutils.h>
+#include <ibmtss/tssprint.h>
+#include <ibmtss/tssresponsecode.h>
+#include <ibmtss/tssmarshal.h>
+#include <ibmtss/Unmarshal_fp.h>
 
 #include "ekutils.h"
 
@@ -112,7 +112,7 @@ TPM_RC startOIAP(TSS_CONTEXT *tssContext,
 			 TPM_RH_NULL, NULL, 0);
     }
     if (rc == 0) {
-	if (verbose) printf("startOIAP: Handle %08x\n", out.authHandle);
+	if (vverbose) printf("startOIAP: Handle %08x\n", out.authHandle);
 	*sessionHandle = out.authHandle;
     }
     else {

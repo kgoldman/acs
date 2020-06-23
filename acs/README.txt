@@ -1,4 +1,4 @@
-$Id: README.txt 1238 2018-06-05 21:14:55Z kgoldman $
+$Id: README.txt 1630 2020-06-04 18:37:01Z kgoldman $
 Written by Ken Goldman
 IBM Thomas J. Watson Research Center
 
@@ -107,16 +107,17 @@ https://sourceforge.net/projects/ibmswtpm2/
 
 https://sourceforge.net/projects/ibmtpm20tss/
 
+	For a TPM 2.0 TSS
+
 > cd .../tpm2/utils
-> make
+> make -f makefiletpm20
 
 	For a combined TPM 1.2 and TPM 2.0 TSS
 
-	> make -f makefiletpmc
-
-	For a TPM 1.2 only TSS
-
-	> make -f makefiletpm12
+> cd .../tpm2/utils
+> make -f makefiletpmc
+> cd .../tpm2/utils12
+> make -f makefiletpmc
 
 3 - Since the TSS is not "installed", the ACS programs must point
 to the TSS library [path].  When the TSS is installed in /usr/lib as
@@ -124,11 +125,11 @@ part of a distribution, this step becomes unnecessary.
 
 csh variants
 
-> setenv LD_LIBRARY_PATH [path]/tpm2/utils
+> setenv LD_LIBRARY_PATH [path]/tpm2/utils:[path]/tpm2/utils12
 
 bash variants
 
-> export LD_LIBRARY_PATH=[path]/tpm2/utils
+> export LD_LIBRARY_PATH=[path]/tpm2/utils:[path]/tpm2/utils12
 
 4 - Attestation demo
 
@@ -151,7 +152,7 @@ For TPM 1.2 and TPM 2.0 client and TPM 1.2 / TPM 2.0 server
 
 > make -f makefiletpmc
 	
-	These notes are not required once the TSS is instlled in the
+	These notes are not required once the TSS is installed in the
 	system area through a package manager.
 
 	The makefile assumes that the TSS include and library
@@ -163,6 +164,7 @@ For TPM 1.2 and TPM 2.0 client and TPM 1.2 / TPM 2.0 server
 	For TPM 1.2
 
 	> setenv CPATH [path-to]/tpm2/utils:[path-to]/tpm2/utils12
+	> setenv LIBRARY_PATH [path-to]/tpm2/utils:[path-to]/tpm2/utils12
 	
 
 
@@ -265,11 +267,11 @@ The TSS will normally default to these.
 (RSA public key and CA key)
 
 
-.../tpm2/utils> createekcert -alg rsa -cakey cakey.pem -capwd rrrr -v
+.../tpm2/utils> createekcert -rsa 2048 -cakey cakey.pem -capwd rrrr -v
 
 (EC public key and CA key)
 
-.../tpm2/utils> createekcert -alg ecc -cakey cakeyecc.pem -capwd rrrr -caalg ec -v
+.../tpm2/utils> createekcert -ecc nistp256 -cakey cakeyecc.pem -capwd rrrr -caalg ec -v
 
 CAUTION.  The EK and certificate will normally persist.  However,
 running the TSS regression test rolls the EPS (endorsement hierarchy
@@ -555,7 +557,7 @@ machines - all machines
 		set to zero on enrollment
 		set back to zero on first quote or reboot
 	imapcr - value corresponding to imaevents, used for incremental update		
-	pcr00-pcr23 - sha1 and sha256, white list, values from first valid quote
+	pcr00-pcr23 - white list, values from first valid quote
 
 attestlog - all attestations for all machines
 
@@ -573,12 +575,12 @@ attestlog - all attestations for all machines
 	pcr00-pcr23 - current value from quote
 	pcrschanged - boolean flag, pcrs changed from last attestation
 	quoteverified - boolean flag, signature over quote data is valid
-	logverified - boolean flag, bios event log verifies against its PCRs
+	logverified - boolean flag, PCR digest from event logs matches quote
+	imaver -      boolean flag, PCR digest from event logs matches quote
 	logentries - number of entries in BIOS event log
 	imaevents - number of entries in IMA event log
 	pcrinvalid - boolean flag, pcrs different from white list
-	imaver -  boolean flag, IMA event log verifies against its PCR
-	badimalog - boolean flag, IMA event log is malformed
+	badimalog - boolean flag, obsolete
 
 imalog - current IMA event log for all machines
 
@@ -603,7 +605,7 @@ bioslog - current BIOS event log for all machines
 		whatever the client provides
 	timestamp - server time of attestation
 	entrynum - bios event number	
-	bios_entry - the raw ima event as hex ascii
+	bios_entry - the raw bios event as hex ascii
 	eventtype - TCG_PCR_EVENT2.eventType as ascii
 	event - TCG_PCR_EVENT2.event as ascii
 
@@ -623,62 +625,75 @@ At enroll
 		imapcr			null
 	
 At nonce
+	machines update
+		boottime		
+		imaevents		0
+		imapcr			0000...
+
 	attestlog insert
 		userid
 		hostname
 		timestamp
 		nonce
 		pcrselect
+		boottime
 
-		boottime		null
-		quoteverified		null
-		pcrnn			null
-		quote			null
-		pcrinvalid		null 
-		logverified		null
-		logentries		null
-		imaver			null 
-		badimalog		null 
-		pcr00-pcr23		null
-
+		new boot:
+			pcrnn = 0000...
+		incremental:
+			pcrnn = previous pcrnn
+				
 At quote
 	machines update
 
-		if quote verified
-			if storePcrWhiteList		(first time)
-				pcrnn
-			if storePcrWhiteList or new boottime
+		if quoteverified
+			boottime
+			if logverified
+				imapcr  
+				imaevents
+				if storePcrWhiteList	(first time)
+					pcrnn
 				imaevents	0
 				imapcr		00...00
-			boottime
-
+				
 	atestlog update
-		if quote verified
-			pcrchanged
-			pcrnn
-		if !storePcrWhiteList 
-			pcrinvalid 
-		quoteverified
 		quote
-		boottime
-		
-
-At BIOS
-
+		quoteverified 
+		if quoteverified
+			logverified
+			imaver 
+			if logverified
+				logentries 
+				pcrnn
+				if !storePcrWhiteList	(not first time)
+					pcrinvalid 
+				pcrchanged
+				imasigver
+				
+	bioslog
+		if quoteverified and logverified 
+			(for each event)
+			hostname
+			timestamp
+			entrynum
+			bios_entry
+			pcrindex
+			pcrsha1
+			pcrsha256
+			eventtype
+			event
 	
-	atestlog update
-		logverified 
-		logentries 
-
-At IMA
-		
-	machines update
-		if ima pcr verified
-			imaevents		last event for incremental
-			imapcr			current PCR value
-		
-	atestlog update
-		badimalog 
-		imaver 			
-		imaevents			last event for this quote
+	imalog
+		if quoteverified and logverified
+			(for each event)
+			hostname
+			boottime
+			timestamp
+			entrynum
+			ima_entry
+			filename
+			badevent
+			nosig
+			nokey
+			badsig
 

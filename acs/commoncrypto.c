@@ -3,7 +3,7 @@
 /*			TPM 2.0 Attestation - Common Crypto	  		*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: commoncrypto.c 1094 2017-11-08 21:50:29Z kgoldman $		*/
+/*            $Id: commoncrypto.c 1279 2018-07-24 18:32:37Z kgoldman $		*/
 /*										*/
 /* (c) Copyright IBM Corporation 2016, 2017.					*/
 /*										*/
@@ -45,11 +45,11 @@
 #include "openssl/pem.h"
 #include <openssl/aes.h>
 
-#include <tss2/tss.h>
-#include <tss2/tssutils.h>
-#include <tss2/tssfile.h>
-#include <tss2/tssresponsecode.h>
-#include <tss2/tsscrypto.h>
+#include <ibmtss/tss.h>
+#include <ibmtss/tssutils.h>
+#include <ibmtss/tssfile.h>
+#include <ibmtss/tssresponsecode.h>
+#include <ibmtss/tsscrypto.h>
 #include "ekutils.h"
 #include "cryptoutils.h"
 

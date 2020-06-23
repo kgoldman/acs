@@ -3,9 +3,9 @@
 /*		TPM 2.0 Attestation - Common Error Codes	  		*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: commonerror.h 1173 2018-04-19 19:36:19Z kgoldman $		*/
+/*            $Id: commonerror.h 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016.						*/
+/* (c) Copyright IBM Corporation 2016 = 2020					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -41,6 +41,9 @@
 #define COMMONERROR_H
 
 /* client errors */
+
+#define ACE_ERROR_FIRST		0x90000000
+#define ACE_ERROR_LAST		0x9fffffff
 
 #define ACE_PACKET_LENGTH	0x90000001	/* client packet length too large */
 #define ACE_READ		0x90000002	/* client data read error */
@@ -85,28 +88,39 @@
 #define ACE_FILE_READ		0x9000002b	/* client file read failure */
 #define ACE_OSSL_X509		0x9000002c	/* openssl X509 failure */
 #define ACE_OSSL_ECC		0x9000002e	/* openssl ECC failure */
-#define ACE_OSSL_RAND		0x8000002f	/* openssl random number failure */
+#define ACE_OSSL_RAND		0x9000002f	/* openssl random number failure */
 
 /* server errors, likely fatal */
+
+#define ASE_ERROR_FIRST		0x80000000
+#define ASE_ERROR_LAST		0x8fffffff
 
 #define ASE_ACCEPT		0x80000001	/* client accept failed */
 #define ASE_OUT_OF_MEMORY	0x80000002	/* server out of memory */
 #define ASE_PACKET_LENGTH	0x80000003	/* server packet length too large */
-#define ASE_JSON_SERIALIZE	0x80000004	/* server could not serialize response */
-#define ASE_OSSL_RAND		0x80000005	/* openssl random number failure */
-#define ASE_SQL_CONNECT		0x80000006	/* server could not connect to database */
-#define ASE_SQL_QUERY 		0x80000007	/* server database query failed */
-#define ASE_OSSL_BIO		0x80000008	/* openssl BIO failure */
-#define ASE_OSSL_PEM		0x80000009	/* openssl PEM failure */
-#define ASE_OSSL_X509		0x8000000a	/* openssl X509 failure */
-#define ASE_OSSL_NID		0x8000000b	/* openssl NID failure */
-#define ASE_OSSL_BN		0x8000000c	/* openssl BN failure */
-#define ASE_OSSL_RSA		0x8000000d	/* openssl RSA failure */
-#define ASE_OSSL_AES		0x8000000e	/* openssl AES failure */
-#define ASE_OSSL_DIGEST		0x8000000f	/* openssl Digest failure */
-#define ASE_FILE_READ		0x80000020	/* server file read failure */
-#define ASE_NO_RESPONSE		0x80000030	/* server could not construct response */
+#define ASE_SOCKET_ERROR	0x80000004	/* server socket error */
+
+#define ASE_OSSL_BIO		0x80000010	/* openssl BIO failure */
+#define ASE_OSSL_PEM		0x80000011	/* openssl PEM failure */
+#define ASE_OSSL_X509		0x80000012	/* openssl X509 failure */
+#define ASE_OSSL_NID		0x80000013	/* openssl NID failure */
+#define ASE_OSSL_BN		0x80000014	/* openssl BN failure */
+#define ASE_OSSL_RSA		0x80000015	/* openssl RSA failure */
+#define ASE_OSSL_AES		0x80000016	/* openssl AES failure */
+#define ASE_OSSL_DIGEST		0x80000017	/* openssl Digest failure */
+#define ASE_OSSL_RAND		0x80000018	/* openssl random number failure */
+
+#define ASE_JSON_SERIALIZE	0x80000030	/* server could not serialize response */
+#define ASE_NO_RESPONSE		0x80000031	/* server could not construct response */
+
+#define ASE_SQL_CONNECT		0x80000040	/* server could not connect to database */
+#define ASE_SQL_QUERY 		0x80000041	/* server database query failed */
+#define ASE_SQL_ERROR		0x80000042	/* error in SQL query */
+
+#define ASE_FILE_READ		0x80000050	/* server file read failure */
+
 #define ASE_BAD_ALG		0x80000040	/* server unsupported algorithm */
+
 #define ASE_NULL_VALUE		0x80000050	/* a value is unexpectedly NULL */
 
 

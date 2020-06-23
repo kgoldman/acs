@@ -3,9 +3,9 @@
 /*		TPM 2.0 Attestation - Client JSON Handler			*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: clientjson12.c 1159 2018-04-17 15:10:01Z kgoldman $		*/
+/*            $Id: clientjson12.c 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2018						*/
+/* (c) Copyright IBM Corporation 2018 - 2020					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -56,12 +56,10 @@
 extern int verbose;
 extern int vverbose;
 
-/* JS_Cmd_Quote12() constructs a complete command client packet send a quote
+/* JS_Cmd_NewQuote12() begins a client command packet to send a quote packet
 
    "command":"quote12",
    "hostname":"name",
-   "boottime":"2016-03-21 09:08:25"
-   "pcrnsha1":"value",
    "pcrdata":"value",
    "versioninfo":"value",
    "signature":"value",
@@ -69,48 +67,29 @@ extern int vverbose;
    where name is the host name.
 */
 
-uint32_t JS_Cmd_Quote12(uint32_t *length,		/* freed by caller */
-			char **buffer,
-			const char *hostname,
-			const char *boottime,
-			char pcrsha1String[][(SHA1_DIGEST_SIZE * 2) + 1],
-			const char *pcrDataString,
-			const char *versionInfoString,
-			const char *signatureString)
+uint32_t JS_Cmd_NewQuote12(json_object **command,	/* freed by caller */
+			   const char *hostname,
+			   const char *pcrDataString,
+			   const char *versionInfoString,
+			   const char *signatureString)
 {
     int rc = 0;
-    int i;
-    json_object *command = NULL;
     
     if (rc == 0) {
-	rc = JS_ObjectNew(&command);		/* freed @1 */
+	rc = JS_ObjectNew(command);		/* freed @1 */
     }
     if (rc == 0) {
 	/* command is quote*/
-	json_object_object_add(command, "command", json_object_new_string("quote12"));
+	json_object_object_add(*command, "command", json_object_new_string("quote12"));
 	/* add client machine name */
-	JS_Cmd_AddHostname(command, hostname);
-	/* add client boot time */
-	json_object_object_add(command, "boottime", json_object_new_string(boottime));
-	/* add pcrs */
-	char objName[12];
-	for (i = 0 ; i < 24 ; i++) {
-	    sprintf(objName, "pcr%usha1", i);
-	    json_object_object_add(command,
-				   objName, json_object_new_string(pcrsha1String[i]));
-	}
+	JS_Cmd_AddHostname(*command, hostname);
 	/* add pcrdata, versioninfo, and signature */
-	json_object_object_add(command,
+	json_object_object_add(*command,
 			       "pcrdata", json_object_new_string(pcrDataString));
-	json_object_object_add(command,
+	json_object_object_add(*command,
 			       "versioninfo", json_object_new_string(versionInfoString));
-	json_object_object_add(command,
+	json_object_object_add(*command,
 			       "signature", json_object_new_string(signatureString));
-    }
-    if (rc == 0) {
-	rc = JS_ObjectSerialize(length,
-				buffer,		/* freed by caller */
-				command);	/* @1 */
     }
     return rc;
 }

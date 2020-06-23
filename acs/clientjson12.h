@@ -3,9 +3,9 @@
 /*		TPM 1.2 Attestation - Client JSON Handler			*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: clientjson12.h 1159 2018-04-17 15:10:01Z kgoldman $		*/
+/*            $Id: clientjson12.h 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2018.						*/
+/* (c) Copyright IBM Corporation 2018 - 2020.					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -40,18 +40,15 @@
 #ifndef CLIENTJSON12_H
 #define CLIENTJSON12_H
 
-#include <tss2/tss.h>
+#include <ibmtss/tss.h>
 #include "eventlib.h"
 #include "imalib.h"
 
-uint32_t JS_Cmd_Quote12(uint32_t *length,
-			char **buffer,
-			const char *hostname,
-			const char *boottime,
-			char pcrsha1String[][(SHA1_DIGEST_SIZE * 2) + 1],
-			const char *pcrDataString,
-			const char *versionInfoString,
-			const char *signatureString);
+uint32_t JS_Cmd_NewQuote12(json_object **command,	/* freed by caller */
+			   const char *hostname,
+			   const char *pcrDataString,
+			   const char *versionInfoString,
+			   const char *signatureString);
 uint32_t JS_Cmd_AddEvent12(json_object *command,
 			   unsigned int lineNum,
 			   TCG_PCR_EVENT *event);

@@ -3,9 +3,9 @@
 /*	TPM 2.0 Attestation - Common Client and Server JSON functions		*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: commonjson.c 1107 2017-12-11 19:28:21Z kgoldman $		*/
+/*            $Id: commonjson.c 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016.						*/
+/* (c) Copyright IBM Corporation 2016 - 2020.					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -114,20 +114,22 @@ uint32_t JS_ObjectSerialize(uint32_t *length,
     if (rc == 0) {
 	strcpy(*buffer, p);
     }
-    json_object_put(object);
+    json_object_put(object);	/* freed here */
     return rc;
 }
 
 /* JS_ObjectGetString() returns the value string corresponding to the key string in the json
    object.
 
+   If the length of the key is greater than maxLength, then return ACE_PACKET_LENGTH
 */
 
 uint32_t JS_ObjectGetString(const char **string,
 			    const char *key,
+			    size_t maxLength,
 			    json_object *object)
 {
-    int rc = 0;
+    uint32_t rc = 0;
     json_bool brc;
     json_object *valueJson = NULL;
 
@@ -143,6 +145,83 @@ uint32_t JS_ObjectGetString(const char **string,
 	if (vverbose) printf("JS_ObjectGetString: key: %s string: %s\n",
 			     key, *string);
     }
+    if (rc == 0) {
+	size_t length = strlen(*string);
+	if (length > maxLength) {
+	    printf("ERROR: JS_ObjectGetString: key %s, length %lu > max %lu, \n",
+		   key, (unsigned long)length, (unsigned long)maxLength);
+	    rc = ACE_PACKET_LENGTH;
+	}
+    }
     return rc;
 }
+
+/* JS_ObjectGetStringNull() returns the value string corresponding to the key string in the json
+   object.
+
+   If the key is missing, returns *string = NULL
+   If the length of the key is greater than maxLength, then return ACE_PACKET_LENGTH
+*/
+
+uint32_t JS_ObjectGetStringNull(const char **string,
+				const char *key,
+				size_t maxLength,
+				json_object *object)
+{
+    uint32_t rc = 0;
+    json_bool brc;
+    json_object *valueJson = NULL;
+
+    if (rc == 0) {
+	brc = json_object_object_get_ex(object, key, &valueJson);
+	if (brc == FALSE) {
+	    *string = NULL;
+	}
+    }
+    if ((rc == 0) && brc) {
+	*string = json_object_get_string(valueJson);
+	if (vverbose) printf("JS_ObjectGetStringNull: key: %s string: %s\n",
+			     key, *string);
+    }
+    if ((rc == 0) && brc) {
+	size_t length = strlen(*string);
+	if (length > maxLength) {
+	    printf("ERROR: JS_ObjectGetStringNull: key %s, length %lu > max %lu, \n",
+		   key, (unsigned long)length, (unsigned long)maxLength);
+	    rc = ACE_PACKET_LENGTH;
+	}
+    }
+    return rc;
+}
+
+/* JS_ObjectGetStringMalloc() is similar to JS_ObjectGetString() but returns a
+   malloced string rather than a const.  The intended use is a large string that
+   must be truncated before storing in the database.
+*/
 			    
+uint32_t JS_ObjectGetStringMalloc(char **stringMalloc,	/* freed by caller */
+				  const char *key,
+				  size_t maxLength,
+				  json_object *object)
+{
+    int 	rc = 0;
+    const char 	*string;
+    size_t	stringLength;
+    
+    if (rc == 0) {
+	rc = JS_ObjectGetString(&string, key, maxLength, object);
+    }
+    if (rc == 0) {
+	stringLength = strlen(string);
+	*stringMalloc = malloc(stringLength+1);		/* +1 for the nul terminator */
+	if (*stringMalloc == NULL) {
+	    printf("ERROR: JS_ObjectGetStringMalloc: could not malloc %lu bytes, key %s\n",
+		   (unsigned long)stringLength, key);
+	    rc = ASE_OUT_OF_MEMORY;
+	}
+    }
+    if (rc == 0) {
+	strcpy(*stringMalloc, string);
+    }
+    return rc;
+}

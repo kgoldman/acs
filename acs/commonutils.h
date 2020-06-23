@@ -3,7 +3,7 @@
 /*	TPM 2.0 Attestation - Common Client / Server Utilities			*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: commonutils.h 1167 2018-04-18 18:38:04Z kgoldman $		*/
+/*            $Id: commonutils.h 1279 2018-07-24 18:32:37Z kgoldman $		*/
 /*										*/
 /* (c) Copyright IBM Corporation 2016, 2018					*/
 /*										*/
@@ -64,8 +64,8 @@ uint32_t Array_Scan(unsigned char **data,
 		    size_t *len,
 		    const char *string);
 
-#include <tss2/tss.h>
-#include <tss2/tssutils.h>
+#include <ibmtss/tss.h>
+#include <ibmtss/tssutils.h>
 
 uint32_t Structure_Print(char 			**string,	/* freed by caller */
 			void 			*structure,

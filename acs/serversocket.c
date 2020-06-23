@@ -3,9 +3,9 @@
 /*	TPM 2.0 Attestation - Server Socket Transmit and Receive Utilities	*/
 /*                           Written by Ken Goldman                             */
 /*                     IBM Thomas J. Watson Research Center                     */
-/*            $Id: serversocket.c 1074 2017-09-12 19:09:40Z kgoldman $		*/
+/*            $Id: serversocket.c 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016, 2017.					*/
+/* (c) Copyright IBM Corporation 2016 - 2020.					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -91,6 +91,8 @@ const char 		*port_str;    /* command/response server port
    The parameters are set through environment variables:
 
    ACS_PORT: the server port
+
+   Errors are fatal server errors.
 */
 
 uint32_t Socket_Init(int *sock_fd)
@@ -108,7 +110,7 @@ uint32_t Socket_Init(int *sock_fd)
         port_str = getenv("ACS_PORT");
         if (port_str == NULL) {
             printf("ERROR: Socket_Init: ACS_PORT environment variable not set\n");
-            rc = 1;
+            rc = ASE_SOCKET_ERROR;
         }
     }
     /* port number as short int */
@@ -116,7 +118,7 @@ uint32_t Socket_Init(int *sock_fd)
         irc = sscanf(port_str, "%hu", &port);
         if (irc != 1) {
             printf("ERROR: Socket_Init: ACS_PORT environment variable invalid\n");
-            rc = 1;
+            rc = ASE_SOCKET_ERROR;
         }
     }
     /* create a socket */
@@ -126,7 +128,7 @@ uint32_t Socket_Init(int *sock_fd)
         if (*sock_fd == -1) {
             printf("ERROR: Socket_Init: server socket() %d %s\n",
                    errno, strerror(errno));
-            rc = 1;
+            rc = ASE_SOCKET_ERROR;
         }
     }
     if (rc == 0) {
@@ -140,7 +142,7 @@ uint32_t Socket_Init(int *sock_fd)
         if (irc != 0) {
             printf("ERROR: Socket_Init: server setsockopt() %d %s\n",
                    errno, strerror(errno));
-            rc = 1;
+            rc = ASE_SOCKET_ERROR;
         }
     }
     /* bind the (local) server port name to the socket */
@@ -151,7 +153,7 @@ uint32_t Socket_Init(int *sock_fd)
             *sock_fd = -1;
             printf("ERROR: Socket_Init: server bind() %d %s\n",
                    errno, strerror(errno));
-            rc = 1;
+            rc = ASE_SOCKET_ERROR;
         }
     }
     /* listen for a connection to the socket */
@@ -162,7 +164,7 @@ uint32_t Socket_Init(int *sock_fd)
             *sock_fd = -1;
             printf("ERROR: Socket_Init: server listen() %d %s\n",
                    errno, strerror(errno));
-            rc = 1;
+            rc = ASE_SOCKET_ERROR;
         }
     }
     return rc;
@@ -205,8 +207,8 @@ uint32_t Socket_Connect(int *connection_fd,     /* read/write file descriptor */
    Returns:
 
    0 success
-   1 server error
-   2 client error
+   80000000 server error
+   90000000 client error
 */
 
 uint32_t Socket_Read(int connection_fd,        	/* read/write file descriptor */

@@ -3,9 +3,9 @@
 /*		TPM 2.0 Attestation - Client Side Local Functions		*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: clientlocal.c 1159 2018-04-17 15:10:01Z kgoldman $		*/
+/*            $Id: clientlocal.c 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016, 2017					*/
+/* (c) Copyright IBM Corporation 2016 - 2020					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -52,12 +52,12 @@
 #include <string.h>
 #include <stdint.h>
 
-#include <tss2/tss.h>
-#include <tss2/tssutils.h>
-#include <tss2/tssprint.h>
-#include <tss2/tssresponsecode.h>
-#include <tss2/tssmarshal.h>
-#include <tss2/Unmarshal_fp.h>
+#include <ibmtss/tss.h>
+#include <ibmtss/tssutils.h>
+#include <ibmtss/tssprint.h>
+#include <ibmtss/tssresponsecode.h>
+#include <ibmtss/tssmarshal.h>
+#include <ibmtss/Unmarshal_fp.h>
 #include "ekutils.h"
 #include "imalib.h"
 
@@ -71,8 +71,6 @@ extern int vverbose;
 
 /* local function prototypes */
 
-static uint32_t getBootTime(char *boottime,
-			    size_t boottimeMax);
 /* createEnrollmentData()
 
    creates an SRK primary key and makes it persistent if it does not already
@@ -299,16 +297,13 @@ TPM_RC recoverAttestationKeyCertificate(TPM2B_DIGEST 	*certInfo,
 /* runQuote() runs the TPM quote.  Loads a key whose public and private parts are at AK_PUB_FILENAME
    and AK_PRIV_FILENAME, under the parent at SRK_HANDLE.
 
-   Returns the signature, quote data, and PCRs.
+   Returns the signature andquote data.
 
    The attestation key comes from files saved during enrollment.
 
    /// Retrieve TPM quote
-   /// @param[out] pcrBanks PCR values
    /// @param[out] quoted Quote from TPM
    /// @param[out] signature Quote signature from TPM
-   /// @param[out] boottimeString Boot time as a string
-   /// @param[in] boottimeStringLen Maximum byte length of boottimeString 
    /// @param[in] nonceBin Nonce supplied by server
    /// @param[in] nonceLen Byte length of nonceBin
    /// @param[in] pcrSelection PCRs to retrieve
@@ -316,11 +311,8 @@ TPM_RC recoverAttestationKeyCertificate(TPM2B_DIGEST 	*certInfo,
    /// @param[in] attestPub Attestation public key
 */
 
-TPM_RC runQuote(TPML_PCR_BANKS *pcrBanks,
-		TPM2B_ATTEST *quoted,
+TPM_RC runQuote(TPM2B_ATTEST *quoted,
 		TPMT_SIGNATURE *signature,
-		char *boottimeString,
-		size_t boottimeStringLen,
 		const unsigned char *nonceBin,
 		size_t nonceLen,
 		const TPML_PCR_SELECTION *pcrSelection,
@@ -331,8 +323,6 @@ TPM_RC runQuote(TPML_PCR_BANKS *pcrBanks,
     TPM_RC 		rc1;
     TSS_CONTEXT		*tssContext = NULL;
     TPM_HANDLE 		keyHandle = 0;
-    int			pcr10Match = 0;
-    TPML_PCR_BANKS 	pcrBanksCheck;
     
     /* Start a TSS context */
     if (rc == 0) {
@@ -344,79 +334,116 @@ TPM_RC runQuote(TPML_PCR_BANKS *pcrBanks,
 	rc = loadObject(tssContext, &keyHandle, attestPriv, attestPub);
     }
     /* sign the quote */
-    while ((rc == 0) && !pcr10Match) {
-	    
-	/* read all the PCRs for each bank specified in pcrSelection.  It ignores the bit mask, just
-	   for debug and demo displays. This affects performance slightly, but PCR read time is
-	   negligible compared to the quote time.*/
-	if (rc == 0) {
-	    rc = readPcrs(tssContext,
-			  pcrBanks,
-			  pcrSelection);
-	}
-	if (rc == 0) {
-	    TPMI_ALG_PUBLIC type = attestPub->publicArea.type;
-	    if (vverbose) printf("runQuote: sign quote with key handle %08x\n", keyHandle);
-	    rc = signQuote(tssContext,
-			   quoted,
-			   signature,
-			   keyHandle,
-			   type, 
-			   nonceBin, nonceLen,
-			   pcrSelection);
-	}   
-	/* Since read and quote are not atomic, read again and make sure PCR's have not changed.
-	   This should not be an issue for BIOS, since BIOS is exited long before the first quote.
-	   It could be for IMA, since extends can come between the read and quote. */
-	if (rc == 0) {
-	    rc = readPcrs(tssContext,
-			  &pcrBanksCheck,
-			  pcrSelection);
-	}
-	/* Currently, only PCR 10, the IMA PCR, is checked.  All PCRs are read because (1) the code
-	   is already there, and (2) other PCRs may be of interest in the future. */
-
-	uint32_t	bank;	/* iterate through PCR banks */
-	int		irc;
-	pcr10Match = 1;
-
-	for (bank = 0 ; (rc == 0) && (bank < pcrSelection->count) ; bank++) {
-		
-	    if (pcrSelection->pcrSelections[bank].hash == TPM_ALG_SHA256) {
-		irc = memcmp(pcrBanks->pcrBank[bank].digests[IMA_PCR].t.buffer,
-			     pcrBanksCheck.pcrBank[bank].digests[IMA_PCR].t.buffer,
-			     SHA256_DIGEST_SIZE);
-		if (irc != 0) {
-		    if (vverbose) printf("runQuote: PCR %u SHA-256 bank mismatch, retry\n",
-					 IMA_PCR);
-		    pcr10Match = 0;
-		}
-		    
-	    }
-	    else if (pcrSelection->pcrSelections[bank].hash == TPM_ALG_SHA1) {
-		irc = memcmp(pcrBanks->pcrBank[bank].digests[IMA_PCR].t.buffer,
-			     pcrBanksCheck.pcrBank[bank].digests[IMA_PCR].t.buffer,
-			     SHA1_DIGEST_SIZE);
-		if (irc != 0) {
-		    if (vverbose) printf("runQuote: PCR %u SHA-1 bank mismatch, retry\n",
-					 IMA_PCR);
-		    pcr10Match = 0;
-		}
-	    }
-	    else {
-		printf("ERROR: runQuote: does not support algorithm %04x yet\n",
-		       pcrSelection->pcrSelections[bank].hash);
-		rc = EXIT_FAILURE;
-	    }
-	}
-	if ((rc == 0) && pcr10Match) {
-	    if (vverbose) printf("runQuote: PCR matched before and after quote\n");
-	}
-    }
+    if (rc == 0) {
+	TPMI_ALG_PUBLIC type = attestPub->publicArea.type;
+	if (vverbose) printf("runQuote: sign quote with key handle %08x\n", keyHandle);
+	rc = signQuote(tssContext,
+		       quoted,
+		       signature,
+		       keyHandle,
+		       type, 
+		       nonceBin, nonceLen,
+		       pcrSelection);
+    }   
     /* flush the quote signing key */
     if ((tssContext != NULL) && (keyHandle != 0)) {
 	rc1 = flushContext(tssContext,
 			   keyHandle);
+	if (rc == 0) {
+	    rc = rc1;
+	}
+    }
+    {
+	TPM_RC rc1 = TSS_Delete(tssContext);
+	if (rc == 0) {
+	    rc = rc1;
+	}
+    }
+    return rc;
+}
+
+/* runAudit() runs the TPM PCR read audit.  Loads a key whose public and private parts are at
+   AK_PUB_FILENAME and AK_PRIV_FILENAME, under the parent at SRK_HANDLE.
+
+   Returns the signature, audit data, and PCRs.
+
+   The attestation key comes from files saved during enrollment.
+
+   /// Retrieve TPM quote
+   /// @param[out] pcrBanks PCR values
+   /// @param[out] auditInfo from TPM
+   /// @param[out] signature Quote signature from TPM
+   /// @param[out] boottimeString Boot time as a string
+   /// @param[in] boottimeStringLen Maximum byte length of boottimeString 
+   /// @param[in] nonceBin Nonce supplied by server
+   /// @param[in] nonceLen Byte length of nonceBin
+   /// @param[in] pcrSelection PCRs to retrieve
+   /// @param[in] attestPriv Attestation private key
+   /// @param[in] attestPub Attestation public key
+   */
+
+TPM_RC runAudit(TPML_PCR_BANKS *pcrBanks,
+		TPM2B_ATTEST *auditInfo,
+		TPMT_SIGNATURE *signature,
+		char *boottimeString,
+		size_t boottimeStringLen,
+		const unsigned char *nonceBin,
+		size_t nonceLen,
+		const TPML_PCR_SELECTION *pcrSelection,
+		TPM2B_PRIVATE *attestPriv,	/* signing key */
+		TPM2B_PUBLIC *attestPub)
+{
+    uint32_t 			rc = 0;
+    TPM_RC 			rc1;
+    TSS_CONTEXT			*tssContext = NULL;
+    TPM_HANDLE 			keyHandle = 0;
+    TPMI_SH_AUTH_SESSION 	sessionHandle = 0;
+    
+    /* Start a TSS context */
+    if (rc == 0) {
+	rc = TSS_Create(&tssContext);
+    }
+    /* load the quote signing key */
+    if (rc == 0) {
+	if (vverbose) printf("runAudit: load attestation quote signing key\n");
+	rc = loadObject(tssContext, &keyHandle, attestPriv, attestPub);
+    }
+    /* start the audit session */
+    if (rc == 0) {
+	rc = makeHmacSession(tssContext, &sessionHandle);
+    }
+    /* read the PCRs for all banks - in an audit session */
+    if (rc == 0) {
+	if (vverbose) printf("runAudit: read PCRs in audit session %08x\n", sessionHandle);
+	rc = readPcrsA(tssContext,
+		       pcrBanks,		/* TPML_PCR_BANKS, PCR and counter */
+		       sessionHandle,
+		       pcrSelection);
+    }
+    /* get the signed audit digest */
+    if (rc == 0) {
+	TPMI_ALG_PUBLIC type = attestPub->publicArea.type;
+	if (vverbose) printf("runAudit: sign with key handle %08x\n", keyHandle);
+	rc = getAuditDigest(tssContext,
+			    auditInfo,
+			    signature,
+			    keyHandle,
+			    type,
+			    sessionHandle,
+			    nonceBin, nonceLen);
+    }   
+    /* flush the quote signing key */
+    if ((tssContext != NULL) && (keyHandle != 0)) {
+	rc1 = flushContext(tssContext,
+			   keyHandle);
+	if (rc == 0) {
+	    rc = rc1;
+	}
+    }
+    /* flush the session */
+    if ((tssContext != NULL) && (sessionHandle != 0)) {
+	rc1 = flushContext(tssContext,
+			   sessionHandle);
 	if (rc == 0) {
 	    rc = rc1;
 	}

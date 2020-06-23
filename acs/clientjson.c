@@ -3,9 +3,9 @@
 /*		TPM 2.0 Attestation - Client JSON Handler			*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: clientjson.c 1183 2018-04-27 16:58:25Z kgoldman $		*/
+/*            $Id: clientjson.c 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016, 2018					*/
+/* (c) Copyright IBM Corporation 2016 - 2020					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -59,6 +59,7 @@ extern int vverbose;
    "command":"nonce",
    "hostname":"name",
    "userid":"user"
+   "boottime":"2016-03-21 09:08:25"
 
    where name is the host name and user is the user login name.
 */
@@ -66,7 +67,8 @@ extern int vverbose;
 uint32_t JS_Cmd_Nonce(uint32_t *length,
 		      char **buffer,			/* freed by caller */
 		      const char *commandString,	/* TPM 1.2 or 2.0 */
-		      const char *machineName)
+		      const char *machineName,
+		      const char *boottime)
 {
     int rc = 0;
     json_object *command = NULL;
@@ -86,6 +88,8 @@ uint32_t JS_Cmd_Nonce(uint32_t *length,
 	    userid = "unknown";
 	}
 	json_object_object_add(command, "userid", json_object_new_string(userid));
+	/* add client boot time */
+	json_object_object_add(command, "boottime", json_object_new_string(boottime));
     }
     if (rc == 0) {
 	rc = JS_ObjectSerialize(length,
@@ -98,21 +102,22 @@ uint32_t JS_Cmd_Nonce(uint32_t *length,
 /* JS_Rsp_Nonce() handles the response to the nonce command of the form 
 
    "response":"nonce",
-   "nonce":"0ac6c9ac76c9856cbe87c32324006786ac45b422d92930e6eb6c65533e203ca3",
-   "pcrselect":"00000002000b03ff0000000403000400"
+   "nonce":"64e2f7c525f3faf58bb91e9c7829533aa4477f3cd016311979ba8e35d6983568",
+   "pcrselect":"00000002000b03ff0700000403000000",
+   "biosentry":"0",
+   "imaentry":"0"
+   } 
 
-   It returns the nonce and pcr select values.
+   It just checks that the response is nonce.
 */
 
-uint32_t JS_Rsp_Nonce(const char **nonceString,
-		      const char **pcrSelectString,
-		      json_object *responseObj)
+uint32_t JS_Rsp_Nonce(json_object *responseObj)
 {
     int rc = 0;
     const char *responseString = NULL;
 
     if (rc == 0) {
-	rc = JS_ObjectGetString(&responseString, "response", responseObj);
+	rc = JS_ObjectGetString(&responseString, "response", ACS_JSON_COMMAND_MAX, responseObj);
     }
     if (rc == 0) {
 	if (strcmp(responseString, "nonce") != 0) {
@@ -120,71 +125,38 @@ uint32_t JS_Rsp_Nonce(const char **nonceString,
 	    rc = 1;
 	}
     }
-    if (rc == 0) {
-	rc = JS_ObjectGetString(nonceString, "nonce", responseObj);
-    }
-    if (rc == 0) {
-	rc = JS_ObjectGetString(pcrSelectString, "pcrselect", responseObj);
-    }
     return rc;
 }
 
 #ifdef TPM_TPM20
 
-/* JS_Cmd_Quote() constructs a complete command client packet send a quote
+/* JS_Cmd_NewQuote() begins a client command packet to send a quote packet
 
    "command":"quote",
    "hostname":"name",
-   "boottime":"2016-03-21 09:08:25"
-   "pcrnsha1":"value",
-   "pcrnsha256":"value",
    "quoted":"value",
    "signature":"value",
 
-   where name is the host name.
-*/
+ */
 
-uint32_t JS_Cmd_Quote(uint32_t *length,
-		      char **buffer,		/* freed by caller */
-		      const char *hostname,
-		      const char *boottime,
-		      char pcrsha1[][(SHA1_DIGEST_SIZE * 2) + 1],
-		      char pcrsha256[][(SHA256_DIGEST_SIZE * 2) + 1],
-		      const char *quoted,
-		      const char *signature)
+uint32_t JS_Cmd_NewQuote(json_object **command,	/* freed by caller */
+			 const char *hostname,
+			 const char *quoted,
+			 const char *signature)
 {
     int rc = 0;
-    int i;
-    json_object *command = NULL;
-    
+
     if (rc == 0) {
-	rc = JS_ObjectNew(&command);		/* freed @1 */
+	rc = JS_ObjectNew(command);		/* freed by caller */
     }
     if (rc == 0) {
-	/* command is quote*/
-	json_object_object_add(command, "command", json_object_new_string("quote"));
+	/* command is quote */
+	json_object_object_add(*command, "command", json_object_new_string("quote"));
 	/* add client machine name */
-	JS_Cmd_AddHostname(command, hostname);
-	/* add client boot time */
-	json_object_object_add(command, "boottime", json_object_new_string(boottime));
-	/* add pcrs */
-	char objName[12];
-	for (i = 0 ; i < 24 ; i++) {
-	    sprintf(objName, "pcr%usha1", i);
-	    json_object_object_add(command, objName, json_object_new_string(pcrsha1[i]));
-	}
-	for (i = 0 ; i < 24 ; i++) {
-	    sprintf(objName, "pcr%usha256", i);
-	    json_object_object_add(command, objName, json_object_new_string(pcrsha256[i]));
-	}
+	JS_Cmd_AddHostname(*command, hostname);
 	/* add quoted and signature */
-	json_object_object_add(command, "quoted", json_object_new_string(quoted));
-	json_object_object_add(command, "signature", json_object_new_string(signature));
-    }
-    if (rc == 0) {
-	rc = JS_ObjectSerialize(length,
-				buffer,		/* freed by caller */
-				command);	/* @1 */
+	json_object_object_add(*command, "quoted", json_object_new_string(quoted));
+	json_object_object_add(*command, "signature", json_object_new_string(signature));
     }
     return rc;
 }
@@ -204,61 +176,11 @@ uint32_t JS_Rsp_Quote(json_object *responseObj)
     const char *responseString = NULL;
 
     if (rc == 0) {
-	rc = JS_ObjectGetString(&responseString, "response", responseObj);
+	rc = JS_ObjectGetString(&responseString, "response", ACS_JSON_COMMAND_MAX, responseObj);
     }
     if (rc == 0) {
 	if (strcmp(responseString, "quote") != 0) {
-	    printf("ERROR: JS_Rsp_Nonce: response %s is not quote\n", responseString);
-	    rc = 1;
-	}
-    }
-    return rc;
-}
-
-/* JS_Rsp_Bios() handles the response to the biosentry command of the form 
-
-   "response":"biosentry"
-   "imaentry":"0"
-   
-   It returns the imaentry.
-*/
-
-uint32_t JS_Rsp_Bios(const char **imaentryString,
-		     json_object *responseObj)
-{
-    int rc = 0;
-    const char *responseString = NULL;
-    if (rc == 0) {
-	rc = JS_ObjectGetString(&responseString, "response", responseObj);
-    }
-    if (rc == 0) {
-	if (strcmp(responseString, "biosentry") != 0) {
-	    printf("ERROR: JS_Rsp_Bios: response %s is not biosentry\n", responseString);
-	    rc = 1;
-	}
-    }
-    if (rc == 0) {
-	rc = JS_ObjectGetString(imaentryString, "imaentry", responseObj);
-    }
-    return rc;
-}
-
-/* JS_Rsp_Ima() handles the response to the imaentry command of the form 
-
-   "response":"imaentry"
-   
-*/
-
-uint32_t JS_Rsp_Ima(json_object *responseObj)
-{
-    int rc = 0;
-    const char *responseString = NULL;
-    if (rc == 0) {
-	rc = JS_ObjectGetString(&responseString, "response", responseObj);
-    }
-    if (rc == 0) {
-	if (strcmp(responseString, "imaentry") != 0) {
-	    printf("ERROR: JS_Rsp_Ima: response %s is not imaentry\n", responseString);
+	    printf("ERROR: JS_Rsp_Quote: response %s is not quote\n", responseString);
 	    rc = 1;
 	}
     }
@@ -340,24 +262,11 @@ uint32_t JS_Cmd_AddImaEvent(json_object *command,
 	Array_Print(eventString, NULL, FALSE, eventBin, written);
     }
     if (rc == 0) {
-	sprintf(jsonKey, "event%u", lineNum);
+	sprintf(jsonKey, "imaevent%u", lineNum);
 	json_object_object_add(command, jsonKey, json_object_new_string(eventString));
     }
     free(eventBin);	/* @1 */
     free(eventString);	/* @2 */
-    return rc;
-}
-
-/* JS_Cmd_AddImaEntry() adds a json item:  imaentry:imaEntryString
-
-   where imaEntryString is an integer reflecting the first ima entry to be sent.
-*/
-
-uint32_t JS_Cmd_AddImaEntry(json_object *command,
-			    const char *imaEntryString)
-{
-    int rc = 0;
-    json_object_object_add(command, "imaentry", json_object_new_string(imaEntryString));
     return rc;
 }
 
@@ -403,10 +312,12 @@ uint32_t JS_Cmd_NewBiosEntry(json_object **command,	/* freed by caller */
 uint32_t JS_Cmd_NewImaEntry(json_object **command,	/* freed by caller */
 			    const char *commandString,	/* TPM 1.2 or 2.0 */
 			    const char *hostname,
+			    int 	littleEndian,
 			    const char *nonceString,
 			    const char *imaEntryString)
 {
-    int rc = 0;
+    int 	rc = 0;
+    char 	littleEndianString[2];
     
     if (rc == 0) {
 	rc = JS_ObjectNew(command);		/* freed by caller */
@@ -416,6 +327,14 @@ uint32_t JS_Cmd_NewImaEntry(json_object **command,	/* freed by caller */
 	json_object_object_add(*command, "command", json_object_new_string(commandString));
 	/* add client machine name */
 	JS_Cmd_AddHostname(*command, hostname);
+	/* add littleendian */
+	if (littleEndian) {
+	    sprintf(littleEndianString, "%u", 1);
+	}
+	else {
+	    sprintf(littleEndianString, "%u", 0);
+	}
+	json_object_object_add(*command, "littleendian", json_object_new_string(littleEndianString));
 	/* add nonce */
 	json_object_object_add(*command, "nonce", json_object_new_string(nonceString));
 	/* add IMA entry number */

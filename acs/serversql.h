@@ -3,9 +3,9 @@
 /*		TPM 2.0 Attestation - 	Server Side SQL database     		*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: serversql.h 1105 2017-12-06 22:27:11Z kgoldman $		*/
+/*            $Id: serversql.h 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016.						*/
+/* (c) Copyright IBM Corporation 2016 - 2020.					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -47,7 +47,6 @@
 #define QUERY_LENGTH_MAX 0x10000	/* FIXME */
 #define TPM_SHA1_SIZE		20
 #define TPM_NUM_PCR 		24
-#define TPM_BIOS_PCR 		8
 #define TPM_IMA_PCR 		10
 
 
@@ -75,7 +74,7 @@ uint32_t SQ_GetMachineEntry(char **machineId, 		/* freed by caller */
 			    const char **akcertificatetext,
 			    const char **enrolled,
 			    const char **boottime,
-			    int *imaevents,
+			    unsigned int *imaevents,
 			    const char **imapcr,
 			    MYSQL_RES **machineResult,	/* freed by caller */
 			    MYSQL *mysql,
@@ -86,8 +85,9 @@ uint32_t SQ_RemoveMachineEntry(MYSQL *mysql,
 uint32_t SQ_GetAttestLogEntry(char **attestLogId, 
 			      const char **boottime,
 			      const char **timestamp,
-			      const char **pcrselect,
 			      const char **nonce,
+			      const char **pcrselect,
+			      const char **quote,
 			      const char **quoteverified,
 			      const char **logverified,
 			      MYSQL_RES **attestLogResult,
@@ -107,20 +107,20 @@ uint32_t SQ_GetImaLogEntry(char **imaLogId,
 			   MYSQL *mysql,
 			   const char *hostname);
 uint32_t SQ_GetAttestLogPCRs(char **attestLogId, 
-			     const char *pcrsSha1[],
-			     const char *pcrsSha256[],
+			     const char *pcrs[],
 			     MYSQL_RES **attestLogResult,
 			     MYSQL *mysql,
 			     const char *hostname);
-uint32_t SQ_GetPreviousPcrs(const char *previousPcrsSha1[],
-			    const char *previousPcrsSha256[],
+uint32_t SQ_GetPreviousPcrs(const char *previousPcrsSha256[],
 			    MYSQL_RES **attestLogResult,
 			    MYSQL *mysql,
 			    const char *hostname,
 			    const char *boottime);
-uint32_t SQ_GetFirstPcrs(const char *firstPcrsSha1String[],
-			 const char *firstPcrsSha256String[],
+uint32_t SQ_GetFirstPcrs(const char *firstPcrsString[],
 			 MYSQL_RES **firstPcrsResult,
 			 MYSQL *mysql,
 			 const char *hostname);
+
+uint32_t SQ_EscapeQuotes(char **string);
+
 #endif

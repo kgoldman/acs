@@ -3,9 +3,9 @@
 /*		TPM 2.0 Attestation - Client Side Enrollment			*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: clientenroll.c 1183 2018-04-27 16:58:25Z kgoldman $		*/
+/*            $Id: clientenroll.c 1475 2019-05-08 19:20:24Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016, 2017					*/
+/* (c) Copyright IBM Corporation 2016 - 2019					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -56,13 +56,13 @@
 
 #include <json/json.h>
 
-#include <tss2/tss.h>
-#include <tss2/tssutils.h>
-#include <tss2/tssfile.h>
-#include <tss2/tssprint.h>
-#include <tss2/tssresponsecode.h>
-#include <tss2/tssmarshal.h>
-#include <tss2/Unmarshal_fp.h>
+#include <ibmtss/tss.h>
+#include <ibmtss/tssutils.h>
+#include <ibmtss/tssfile.h>
+#include <ibmtss/tssprint.h>
+#include <ibmtss/tssresponsecode.h>
+#include <ibmtss/tssmarshal.h>
+#include <ibmtss/Unmarshal_fp.h>
 #include "ekutils.h"
 
 #include "config.h"
@@ -430,17 +430,17 @@ static TPM_RC processEnrollResponse(json_object **enrollCertResponseJson,
     /* FIXME check for error response */
     const char *response = NULL;
     if (rc == 0) {
-	rc = JS_ObjectGetString(&response, "response", enrollResponseJson);
+	rc = JS_ObjectGetString(&response, "response", ACS_JSON_COMMAND_MAX, enrollResponseJson);
     }
     /* get the credential blob */
     const char *credentialBlob = NULL;
     if (rc == 0) {
-	rc = JS_ObjectGetString(&credentialBlob, "credentialblob", enrollResponseJson);
+	rc = JS_ObjectGetString(&credentialBlob, "credentialblob", ACS_JSON_CREDENTIALBLOB_MAX, enrollResponseJson);
     }
     /* get the encrypted secret */
     const char *secret = NULL;
     if (rc == 0) {
-	rc = JS_ObjectGetString(&secret, "secret", enrollResponseJson);
+	rc = JS_ObjectGetString(&secret, "secret", ACS_JSON_SECRET_MAX, enrollResponseJson);
     }
     /* convert the credentialblob to binary */
     unsigned char 	*credentialBlobBin = NULL;
@@ -534,12 +534,12 @@ static TPM_RC processEnrollCertResponse(const char *certificateFilename,
     /* FIXME check for error response */
     const char *response = NULL;
     if (rc == 0) {
-	rc = JS_ObjectGetString(&response, "response", enrollCertResponseJson);
+	rc = JS_ObjectGetString(&response, "response", ACS_JSON_COMMAND_MAX, enrollCertResponseJson);
     }
     /* get the AK certificate */
     const char *akCertPemString = NULL;
     if (rc == 0) {
-	rc = JS_ObjectGetString(&akCertPemString, "akcert", enrollCertResponseJson);
+	rc = JS_ObjectGetString(&akCertPemString, "akcert", ACS_JSON_PEMCERT_MAX, enrollCertResponseJson);
     }
     /* write the certificate to a file first, because openssl operates on PEM files */
     if (rc == 0) {

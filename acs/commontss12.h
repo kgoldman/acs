@@ -3,7 +3,7 @@
 /*		TPM 2.0 Attestation - Common TSS Functions	  		*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: commontss12.h 1159 2018-04-17 15:10:01Z kgoldman $		*/
+/*            $Id: commontss12.h 1279 2018-07-24 18:32:37Z kgoldman $		*/
 /*										*/
 /* (c) Copyright IBM Corporation 2016.						*/
 /*										*/
@@ -40,7 +40,7 @@
 #ifndef COMMONTSS12_H
 #define COMMONTSS12_H
 
-#include <tss2/tss.h>
+#include <ibmtss/tss.h>
 
 TPM_RC getTpmVendor12(TSS_CONTEXT *tssContext,
 		      char 	*tpmVendor);

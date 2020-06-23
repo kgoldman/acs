@@ -3,9 +3,9 @@
 /*		TPM 2.0 Attestation - Common TSS Functions	  		*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: commontss.h 1078 2017-09-25 18:39:10Z kgoldman $		*/
+/*            $Id: commontss.h 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016.						*/
+/* (c) Copyright IBM Corporation 2016 - 2020.					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -40,7 +40,7 @@
 #ifndef COMMONTSS_H
 #define COMMONTSS_H
 
-#include <tss2/tss.h>
+#include <ibmtss/tss.h>
 
 TPM_RC getTpmVendor(TSS_CONTEXT *tssContext,
 		    char 	*tpmVendor);
@@ -70,6 +70,8 @@ TPM_RC activatecredential(TSS_CONTEXT *tssContext,
 			  size_t secretBinSize);
 TPM_RC makePolicySession(TSS_CONTEXT *tssContext,
 			 TPMI_SH_AUTH_SESSION *sessionHandle);
+TPM_RC makeHmacSession(TSS_CONTEXT *tssContext,
+		       TPMI_SH_AUTH_SESSION *sessionHandle);
 TPM_RC policySecret(TSS_CONTEXT *tssContext,
 		    TPMI_SH_AUTH_SESSION sessionHandle);
 TPM_RC flushContext(TSS_CONTEXT 	*tssContext,
@@ -83,6 +85,10 @@ TPM_RC policyCommandCode(TSS_CONTEXT 		*tssContext,
 uint32_t readPcrs(TSS_CONTEXT *tssContext,
 		  TPML_PCR_BANKS *pcrBanks,
 		  const TPML_PCR_SELECTION *pcrSelection);
+uint32_t readPcrsA(TSS_CONTEXT *tssContext,
+		   TPML_PCR_BANKS *outPcrBanks,
+		   TPMI_SH_AUTH_SESSION sessionHandle,
+		   const TPML_PCR_SELECTION *pcrSelection);
 uint32_t signQuote(TSS_CONTEXT *tssContext,
 		   TPM2B_ATTEST *quoted,
 		   TPMT_SIGNATURE *signature,
@@ -91,6 +97,14 @@ uint32_t signQuote(TSS_CONTEXT *tssContext,
 		   const unsigned char *nonceBin,
 		   size_t nonceLen,
 		   const TPML_PCR_SELECTION *pcrSelection);
+uint32_t getAuditDigest(TSS_CONTEXT *tssContext,
+			TPM2B_ATTEST *auditInfo,
+			TPMT_SIGNATURE *signature,
+			TPM_HANDLE keyHandle,
+			TPMI_ALG_PUBLIC type,
+			TPMI_SH_AUTH_SESSION sessionHandle,
+			const unsigned char *nonceBin,
+			size_t nonceLen);
 uint32_t loadExternal(TSS_CONTEXT *tssContext,
 		      TPM_HANDLE *objectHandle,
 		      TPM2B_NAME *name,

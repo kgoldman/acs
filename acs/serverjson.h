@@ -3,9 +3,9 @@
 /*		TPM 2.0 Attestation - Server JSON Handler   			*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: serverjson.h 856 2016-12-12 15:39:27Z kgoldman $		*/
+/*            $Id: serverjson.h 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2015.						*/
+/* (c) Copyright IBM Corporation 2015 - 2020					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -44,14 +44,18 @@ uint32_t JS_Cmd_GetCommand(const char **commandString,
 			   json_object **cmdJson,
 			   const char *cmdBuffer,
 			   uint32_t cmdLength);
-
+uint32_t JS_Cmd_GetLittleEndian(int *littleEndian,
+				json_object *cmdJson);
 uint32_t JS_Cmd_GetPCR(const char **pcrSha1String,
 		       const char **pcrSha256String,
 		       unsigned int pcrNum,
 		       json_object *cmdJson);
-uint32_t JS_Cmd_GetEvent(const char **eventString,
+uint32_t JS_Cmd_GetEvent(char **eventString,
 			 unsigned int eventNum,
 			 json_object *cmdJson);
+uint32_t JS_Cmd_GetImaEvent(char **eventString,
+			    unsigned int eventNum,
+			    json_object *cmdJson);
 uint32_t JS_Cmd_GetImaEntry(unsigned int *imaEntry,
 			    json_object *cmdJson);
 uint32_t JS_StringToArray(uint8_t *array,

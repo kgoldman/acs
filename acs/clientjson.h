@@ -3,9 +3,9 @@
 /*		TPM 2.0 Attestation - Client JSON Handler			*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: clientjson.h 1159 2018-04-17 15:10:01Z kgoldman $		*/
+/*            $Id: clientjson.h 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016, 2018					*/
+/* (c) Copyright IBM Corporation 2016 - 2020					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -40,30 +40,25 @@
 #ifndef CLIENTJSON_H
 #define CLIENTJSON_H
 
-#include <tss2/tss.h>
+#include <ibmtss/tss.h>
 #include "eventlib.h"
 #include "imalib.h"
+#include "config.h"
 
 uint32_t JS_Cmd_Nonce(uint32_t *length,
 		      char **buffer,
 		      const char *commandString,
-		      const char *machineName);
-uint32_t JS_Rsp_Nonce(const char **nonce,
-		      const char **pcrSelect,
-		      json_object *responseObj);
+		      const char *machineName,
+		      const char *boottime);
+uint32_t JS_Rsp_Nonce(json_object *responseObj);
 
-uint32_t JS_Cmd_Quote(uint32_t *length,
-		      char **buffer,
-		      const char *hostname,
-		      const char *boottime,
-		      char pcrsha1[][(SHA1_DIGEST_SIZE * 2) + 1],
-		      char pcrsha256[][(SHA256_DIGEST_SIZE * 2) + 1],
-		      const char *quoted,
-		      const char *signature);
+uint32_t JS_Cmd_NewQuote(json_object **command,
+			 const char *hostname,
+			 const char *quoted,
+			 const char *signature);
+
 uint32_t JS_Rsp_Quote(json_object *responseObj);
 
-uint32_t JS_Cmd_AddImaEntry(json_object *command,
-			    const char *imaEntryString);
 uint32_t JS_Cmd_NewBiosEntry(json_object **command,
 			     const char *commandString,
 			     const char *hostname,
@@ -71,6 +66,7 @@ uint32_t JS_Cmd_NewBiosEntry(json_object **command,
 uint32_t JS_Cmd_NewImaEntry(json_object **command,
 			    const char *commandString,
 			    const char *hostname,
+			    int 	littleEndian,
 			    const char *nonceString,
 			    const char *imaEntryString);
 void JS_Cmd_AddHostname(json_object *command, const char *machineName);
@@ -81,10 +77,6 @@ uint32_t JS_Cmd_AddEvent(json_object *command,
 uint32_t JS_Cmd_AddImaEvent(json_object *command,
 			    ImaEvent 	*imaEvent,
 			    unsigned int lineNum);
-
-uint32_t JS_Rsp_Bios(const char **imaentryString,
-		     json_object *responseObj);
-uint32_t JS_Rsp_Ima(json_object *responseObj);
 
 uint32_t JS_Cmd_EnrollRequest(uint32_t *length,
 			      char **buffer,

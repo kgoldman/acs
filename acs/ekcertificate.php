@@ -1,5 +1,5 @@
 <?php
-/* $Id: ekcertificate.php 1198 2018-05-04 15:06:06Z kgoldman $			*/
+/* $Id: ekcertificate.php 1459 2019-04-09 13:24:51Z kgoldman $			*/
 /*										*/
 /* (c) Copyright IBM Corporation 2016, 2018.					*/
 /*										*/
@@ -53,7 +53,7 @@ require("dbconnect.php");
 /* get the EK certificate in text */
 $result = mysqli_query($connect, "SELECT ekcertificatetext FROM machines WHERE id = " . $id);
 
-header ("Content-Type:application/json");
+header ("Content-Type:text/plain");
 
 if (!mysqli_num_rows($result)) {
     echo "{No Results}";

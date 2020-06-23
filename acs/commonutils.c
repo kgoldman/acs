@@ -3,9 +3,9 @@
 /*	TPM 2.0 Attestation - Common Client / Server Utilities			*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: commonutils.c 1173 2018-04-19 19:36:19Z kgoldman $		*/
+/*            $Id: commonutils.c 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016, 2017.					*/
+/* (c) Copyright IBM Corporation 2016 - 2020.					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -62,6 +62,9 @@ void Array_Print(char *string, const char *name, int newlines,
     unsigned int i = 0;
     if (name != NULL) {
 	printf("%s \n", name);
+    }
+    if (string != NULL) {	/* handle the len = 0 case */
+	string[0] = '\0';
     }
     while (i < len) {
 	if (string == NULL) {
@@ -196,7 +199,7 @@ uint32_t Structure_Scan(void 			*structure,
     }
     if (rc == 0) {
 	uint8_t	*tmpbuf = bin;
-	int32_t ilength = binLen;
+	uint32_t ilength = binLen;
 	rc = unmarshalFunction(structure, &tmpbuf, &ilength);
     }
     free(bin);		/* @1 */

@@ -3,9 +3,9 @@
 /*		TPM 2.0 Attestation - 	Server Side SQL database     		*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: serversql.c 1171 2018-04-19 18:22:21Z kgoldman $		*/
+/*            $Id: serversql.c 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016, 2018.					*/
+/* (c) Copyright IBM Corporation 2016 - 2020.					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -43,6 +43,7 @@
 
 #include <mysql/mysql.h>
 
+#include <ibmtss/tsserror.h>
 #include "commonerror.h"
 
 #include "serversql.h"
@@ -211,7 +212,7 @@ uint32_t SQ_GetMachineEntry(char **machineId, 		/* freed by caller */
 			    const char **akcertificatetext,
 			    const char **enrolled,
 			    const char **boottime,
-			    int *imaevents,
+			    unsigned int *imaevents,
 			    const char **imapcr,
 			    MYSQL_RES **machineResult,	/* freed by caller */
 			    MYSQL *mysql,
@@ -309,7 +310,7 @@ uint32_t SQ_GetMachineEntry(char **machineId, 		/* freed by caller */
 	}
 	if (imaevents != NULL) {
 	    if (machineRow[10] != NULL) {
-		*imaevents = atoi(machineRow[10]);
+		sscanf(machineRow[10], "%u", imaevents);
 	    }
 	    else {
 		*imaevents = 0;
@@ -341,6 +342,7 @@ uint32_t SQ_GetAttestLogEntry(char **attestLogId, 		/* freed by caller */
 			      const char **timestamp,
 			      const char **nonce,
 			      const char **pcrselect,
+			      const char **quote,
 			      const char **quoteverified,
 			      const char **logverified,
 			      MYSQL_RES **attestLogResult,	/* freed by caller */
@@ -352,7 +354,8 @@ uint32_t SQ_GetAttestLogEntry(char **attestLogId, 		/* freed by caller */
 
     if (rc == 0) {
 	sprintf(query,
-		"select id, boottime, timestamp, nonce, pcrselect, quoteverified, logverified "
+		"select id, boottime, timestamp, nonce, pcrselect, quote, "
+		"quoteverified, logverified "
 		"from attestlog where hostname = '%s' order by id",
 		hostname);
 	rc = SQ_Query(attestLogResult,
@@ -398,12 +401,16 @@ uint32_t SQ_GetAttestLogEntry(char **attestLogId, 		/* freed by caller */
 	    *pcrselect = attestLogRow[4];
 	    if (vverbose) printf("SQ_GetAttestLogEntry: pcrselect %s\n", *pcrselect);
 	}
+	if (quote != NULL) {
+	    *pcrselect = attestLogRow[5];
+	    if (vverbose) printf("SQ_GetAttestLogEntry: quote %s\n", *pcrselect);
+	}
 	if (quoteverified != NULL) {
-	    *quoteverified = attestLogRow[5];
+	    *quoteverified = attestLogRow[6];
 	    if (vverbose) printf("SQ_GetAttestLogEntry: quoteverified %s\n", *quoteverified);
 	}
 	if (logverified != NULL) {
-	    *logverified = attestLogRow[6];
+	    *logverified = attestLogRow[7];
 	    if (vverbose) printf("SQ_GetAttestLogEntry: logverified %s\n", *logverified);
 	}
     }
@@ -537,8 +544,7 @@ uint32_t SQ_RemoveMachineEntry(MYSQL *mysql,
 */
 
 uint32_t SQ_GetAttestLogPCRs(char **attestLogId, 		/* freed by caller */
-			     const char *pcrsSha1[],
-			     const char *pcrsSha256[],
+			     const char *pcrs[],
 			     MYSQL_RES **attestLogResult,	/* freed by caller */
 			     MYSQL *mysql,
 			     const char *hostname)
@@ -549,12 +555,6 @@ uint32_t SQ_GetAttestLogPCRs(char **attestLogId, 		/* freed by caller */
     if (rc == 0) {
 	sprintf(query,
 		"select id, "
-		"pcr00sha1, pcr01sha1, pcr02sha1, pcr03sha1, "
-		"pcr04sha1, pcr05sha1, pcr06sha1, pcr07sha1, "
-		"pcr08sha1, pcr09sha1, pcr10sha1, pcr11sha1, "
-		"pcr12sha1, pcr13sha1, pcr14sha1, pcr15sha1, "
-		"pcr16sha1, pcr17sha1, pcr18sha1, pcr19sha1, "
-		"pcr20sha1, pcr21sha1, pcr22sha1, pcr23sha1, "
 		"pcr00sha256, pcr01sha256, pcr02sha256, pcr03sha256, "
 		"pcr04sha256, pcr05sha256, pcr06sha256, pcr07sha256, "
 		"pcr08sha256, pcr09sha256, pcr10sha256, pcr11sha256, "
@@ -591,16 +591,11 @@ uint32_t SQ_GetAttestLogPCRs(char **attestLogId, 		/* freed by caller */
 	}
 	unsigned int pcrNum;
 	for (pcrNum = 0 ; pcrNum < TPM_NUM_PCR ; pcrNum++) {
-	    pcrsSha1[pcrNum] = attestLogRow[1 + pcrNum];
-	    pcrsSha256[pcrNum] = attestLogRow[1 + TPM_NUM_PCR + pcrNum];
+	    pcrs[pcrNum] = attestLogRow[1 + pcrNum];
 	}
 	for (pcrNum = 0 ; pcrNum < TPM_NUM_PCR ; pcrNum++) {
-	    if (vverbose) printf("SQ_GetAttestLogPCRs: SHA1   PCR%02u %s \n",
-				 pcrNum, pcrsSha1[pcrNum]);
-	}
-	for (pcrNum = 0 ; pcrNum < TPM_NUM_PCR ; pcrNum++) {
-	    if (vverbose) printf("SQ_GetAttestLogPCRs: SHA256 PCR%02u %s \n",
-				 pcrNum, pcrsSha256[pcrNum]);
+	    if (vverbose) printf("SQ_GetAttestLogPCRs: PCR%02u %s\n",
+				 pcrNum, pcrs[pcrNum]);
 	}
     }
     return rc;
@@ -612,35 +607,19 @@ uint32_t SQ_GetAttestLogPCRs(char **attestLogId, 		/* freed by caller */
    A failure return code means that this is the first time for the machine (and boot cycle).
 */
 
-uint32_t SQ_GetPreviousPcrs(const char *previousPcrsSha1[],
-			    const char *previousPcrsSha256[],
+uint32_t SQ_GetPreviousPcrs(const char *previousPcrs[],
 			    MYSQL_RES **previousPcrsResult,	/* freed by caller */
 			    MYSQL *mysql,
 			    const char *hostname,
 			    const char *boottime)
 {
     uint32_t	rc = 0;
-    const char *pcralg = NULL;
     char 	query[QUERY_LENGTH_MAX];
 
-    if (rc == 0) {
-	if (previousPcrsSha256 != NULL) {	/* use SHA-256 for TPM 2.0 */
-	    pcralg = "pcr00sha256";
-	}
-	else {					/* use SHA-1 for TPM 1.2 */
-	    pcralg = "pcr00sha1";
-	}
-    }
     if (rc == 0) {
 	if (boottime != NULL) {
 	    sprintf(query,
 		    "select "
-		    "pcr00sha1, pcr01sha1, pcr02sha1, pcr03sha1, "
-		    "pcr04sha1, pcr05sha1, pcr06sha1, pcr07sha1, "
-		    "pcr08sha1, pcr09sha1, pcr10sha1, pcr11sha1, "
-		    "pcr12sha1, pcr13sha1, pcr14sha1, pcr15sha1, "
-		    "pcr16sha1, pcr17sha1, pcr18sha1, pcr19sha1, "
-		    "pcr20sha1, pcr21sha1, pcr22sha1, pcr23sha1, "
 		    "pcr00sha256, pcr01sha256, pcr02sha256, pcr03sha256, "
 		    "pcr04sha256, pcr05sha256, pcr06sha256, pcr07sha256, "
 		    "pcr08sha256, pcr09sha256, pcr10sha256, pcr11sha256, "
@@ -648,20 +627,14 @@ uint32_t SQ_GetPreviousPcrs(const char *previousPcrsSha1[],
 		    "pcr16sha256, pcr17sha256, pcr18sha256, pcr19sha256, "
 		    "pcr20sha256, pcr21sha256, pcr22sha256, pcr23sha256 "
 		    "from attestlog where hostname = '%s' "
-		    "and %s != 'NULL' "
+		    "and pcr00sha256 != 'NULL' "
 		    "and boottime = '%s' "
 		    "order by id",
-		    hostname, pcralg, boottime);
+		    hostname, boottime);
 	}
 	else {	/* boot time NULL, ignore boottime */
 	    sprintf(query,
 		    "select "
-		    "pcr00sha1, pcr01sha1, pcr02sha1, pcr03sha1, "
-		    "pcr04sha1, pcr05sha1, pcr06sha1, pcr07sha1, "
-		    "pcr08sha1, pcr09sha1, pcr10sha1, pcr11sha1, "
-		    "pcr12sha1, pcr13sha1, pcr14sha1, pcr15sha1, "
-		    "pcr16sha1, pcr17sha1, pcr18sha1, pcr19sha1, "
-		    "pcr20sha1, pcr21sha1, pcr22sha1, pcr23sha1, "
 		    "pcr00sha256, pcr01sha256, pcr02sha256, pcr03sha256, "
 		    "pcr04sha256, pcr05sha256, pcr06sha256, pcr07sha256, "
 		    "pcr08sha256, pcr09sha256, pcr10sha256, pcr11sha256, "
@@ -669,15 +642,17 @@ uint32_t SQ_GetPreviousPcrs(const char *previousPcrsSha1[],
 		    "pcr16sha256, pcr17sha256, pcr18sha256, pcr19sha256, "
 		    "pcr20sha256, pcr21sha256, pcr22sha256, pcr23sha256 "
 		    "from attestlog where hostname = '%s' "
-		    "and %s != 'NULL' "
+		    "and pcr00sha256 != 'NULL' "
 		    "order by id",
-		    hostname, pcralg);
+		    hostname);
 	}
 	rc = SQ_Query(previousPcrsResult,
 		      mysql, query);
     }
     MYSQL_ROW attestLogRow = NULL; 
     if (rc == 0) {
+	/* offset is 0 because the next row has just been initialized with nulls for the current
+	   attestation. */
 	rc = SQ_FetchRow(&attestLogRow,
 			 0,		/* offset to previous row */
 			 *previousPcrsResult);
@@ -685,18 +660,13 @@ uint32_t SQ_GetPreviousPcrs(const char *previousPcrsSha1[],
     if (rc == 0) {
 	unsigned int pcrNum;
 	for (pcrNum = 0 ; pcrNum < TPM_NUM_PCR ; pcrNum++) {
-	    previousPcrsSha1[pcrNum] = attestLogRow[pcrNum];
-	    if (previousPcrsSha256 != NULL) {			/* TPM 2.0 only */
-		previousPcrsSha256[pcrNum] = attestLogRow[pcrNum + TPM_NUM_PCR];
+	    if (previousPcrs != NULL) {			/* TPM 2.0 only */
+		previousPcrs[pcrNum] = attestLogRow[pcrNum];
 	    }
 	}
-	for (pcrNum = 0 ; pcrNum < TPM_NUM_PCR ; pcrNum++) {
-	    if (vverbose) printf("SQ_GetPreviousPcrs: SHA1   PCR%02u %s \n",
-				 pcrNum, previousPcrsSha1[pcrNum]);
-	}
-	for (pcrNum = 0 ; (previousPcrsSha256 != NULL) && (pcrNum < TPM_NUM_PCR) ; pcrNum++) {
-	    if (vverbose) printf("SQ_GetPreviousPcrs: SHA256 PCR%02u %s \n",
-				 pcrNum, previousPcrsSha256[pcrNum]);
+	for (pcrNum = 0 ; (previousPcrs != NULL) && (pcrNum < TPM_NUM_PCR) ; pcrNum++) {
+	    if (vverbose) printf("SQ_GetPreviousPcrs: PCR%02u %s \n",
+				 pcrNum, previousPcrs[pcrNum]);
 	}
     }
     else {
@@ -708,11 +678,10 @@ uint32_t SQ_GetPreviousPcrs(const char *previousPcrsSha1[],
 
 /* SQ_GetFirstPcrs() gets the PCR while list form the machines DB for this hostname.
 
-   Return code failure if no first PCRs white list.
+   It is not a failure if no first PCRs white list.
 */
 
-uint32_t SQ_GetFirstPcrs(const char *firstPcrsSha1String[],
-			 const char *firstPcrsSha256String[],
+uint32_t SQ_GetFirstPcrs(const char *firstPcrsString[],
 			 MYSQL_RES **firstPcrsResult,	/* freed by caller */
 			 MYSQL *mysql,
 			 const char *hostname)
@@ -723,12 +692,6 @@ uint32_t SQ_GetFirstPcrs(const char *firstPcrsSha1String[],
     if (rc == 0) {
 	sprintf(query,
 		"select "
-		"pcr00sha1, pcr01sha1, pcr02sha1, pcr03sha1, "
-		"pcr04sha1, pcr05sha1, pcr06sha1, pcr07sha1, "
-		"pcr08sha1, pcr09sha1, pcr10sha1, pcr11sha1, "
-		"pcr12sha1, pcr13sha1, pcr14sha1, pcr15sha1, "
-		"pcr16sha1, pcr17sha1, pcr18sha1, pcr19sha1, "
-		"pcr20sha1, pcr21sha1, pcr22sha1, pcr23sha1, "
 		"pcr00sha256, pcr01sha256, pcr02sha256, pcr03sha256, "
 		"pcr04sha256, pcr05sha256, pcr06sha256, pcr07sha256, "
 		"pcr08sha256, pcr09sha256, pcr10sha256, pcr11sha256, "
@@ -740,30 +703,23 @@ uint32_t SQ_GetFirstPcrs(const char *firstPcrsSha1String[],
 	rc = SQ_Query(firstPcrsResult,
 		      mysql, query);
     }
-    MYSQL_ROW attestLogRow = NULL;
+    MYSQL_ROW machinesRow = NULL;
     /* server error if this fails */
     if (rc == 0) {
-	rc = SQ_FetchRow(&attestLogRow,
+	rc = SQ_FetchRow(&machinesRow,
 			 0,		/* offset to first row */
 			 *firstPcrsResult);
     }
     if (rc == 0) {
 	unsigned int pcrNum;
 	for (pcrNum = 0 ; pcrNum < TPM_NUM_PCR ; pcrNum++) {
-	    if (firstPcrsSha1String != NULL) {
-		firstPcrsSha1String[pcrNum] = attestLogRow[pcrNum];
-	    }
-	    if (firstPcrsSha256String != NULL) {
-		firstPcrsSha256String[pcrNum] = attestLogRow[pcrNum + TPM_NUM_PCR];
+	    if (firstPcrsString != NULL) {
+		firstPcrsString[pcrNum] = machinesRow[pcrNum];
 	    }
 	}
-	for (pcrNum = 0 ; (firstPcrsSha1String != NULL) && (pcrNum < TPM_NUM_PCR) ; pcrNum++) {
-	    if (vverbose) printf("SQ_GetFirstPcrs: SHA1   PCR%02u %s \n",
-				 pcrNum, firstPcrsSha1String[pcrNum]);
-	}
-	for (pcrNum = 0 ; (firstPcrsSha256String != NULL) && (pcrNum < TPM_NUM_PCR) ; pcrNum++) {
-	    if (vverbose) printf("SQ_GetFirstPcrs: SHA256 PCR%02u %s \n",
-				 pcrNum, firstPcrsSha256String[pcrNum]);
+	for (pcrNum = 0 ; (firstPcrsString != NULL) && (pcrNum < TPM_NUM_PCR) ; pcrNum++) {
+	    if (vverbose) printf("SQ_GetFirstPcrs: PCR%02u %s \n",
+				 pcrNum, firstPcrsString[pcrNum]);
 	}
     }
     else {
@@ -773,3 +729,54 @@ uint32_t SQ_GetFirstPcrs(const char *firstPcrsSha1String[],
     return rc;
 }
 
+/* SQ_EscapeQuotes() escapes any single quotes in 'string' so that the result can be used in an SQL
+   statement.
+
+   On input, string must be an allocated variable containing a nul terminated C string.  On output,
+   string is reallocated if required.
+*/
+
+uint32_t SQ_EscapeQuotes(char **string)
+{
+    uint32_t	rc = 0;
+    size_t 	length;
+    size_t 	quoteCount;
+    size_t 	i;
+    size_t 	j;
+    char 	*tmp;
+
+    /* count the number of single quotes */
+    if (rc == 0) {
+	length = strlen(*string);
+	quoteCount = 0;
+	for (i = 0 ; i < length ; i++) {
+	    if (*((*string) +i) == '\'') {
+		quoteCount++;
+	    }
+	}
+	/* if need to escape some quotes */
+	if (quoteCount > 0) {
+	    tmp = malloc(length + quoteCount + 1);
+	    if (tmp == NULL) {
+		printf("SQ_EscapeQuotes: Cannot realloc %lu\n",
+		       (unsigned long)length + quoteCount + 1);  
+		rc = TSS_RC_OUT_OF_MEMORY;
+	    }
+	}	    
+    }
+    if ((rc == 0) && (quoteCount > 0)) {
+	for (i = 0, j = 0 ; j < length + quoteCount ; ) {
+	    if (*((*string) +i) == '\'') {
+		*(tmp + j) = '\'';
+		j++;
+	    }
+	    *(tmp + j) = *((*string) +i);
+	    i++;
+	    j++;
+	}
+	*(tmp + j) = '\0';
+	free(*string);
+	*string = tmp;
+    }
+    return rc;
+}

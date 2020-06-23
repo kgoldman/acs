@@ -3,9 +3,9 @@
 /*			TPM 1.2 Attestation - Client   				*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: client12.c 1167 2018-04-18 18:38:04Z kgoldman $		*/
+/*            $Id: client12.c 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2018						*/
+/* (c) Copyright IBM Corporation 2018 - 2020					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -53,16 +53,16 @@
 #include <openssl/err.h>
 #include <openssl/rand.h>
 
-#include <tss2/tss.h>
-#include <tss2/tssutils.h>
-#include <tss2/tssfile.h>
-#include <tss2/tssresponsecode.h>
-#include <tss2/tssprint.h>
-#include <tss2/tssmarshal.h>
-#include <tss2/tssmarshal12.h>
-#include <tss2/Unmarshal_fp.h>
-#include <tss2/tsscryptoh.h>
-#include <tss2/Unmarshal12_fp.h>
+#include <ibmtss/tss.h>
+#include <ibmtss/tssutils.h>
+#include <ibmtss/tssfile.h>
+#include <ibmtss/tssresponsecode.h>
+#include <ibmtss/tssprint.h>
+#include <ibmtss/tssmarshal.h>
+#include <ibmtss/tssmarshal12.h>
+#include <ibmtss/Unmarshal_fp.h>
+#include <ibmtss/tsscryptoh.h>
+#include <ibmtss/Unmarshal12_fp.h>
 #include "cryptoutils.h"
 
 #ifndef TPM_ACS_NOIMA
@@ -91,52 +91,44 @@ static uint32_t getNonce(json_object **nonceResponseJson,
 			 const char *hostname,
 			 short port,
 			 const char *machineName,
-			 const char **nonceString,
-			 const char **pcrSelectString);
+			 char *boottimeString,
+			 size_t boottimeStringLen);
+static uint32_t parseNonceResponse(const char **nonceString,
+				   const char **pcrSelectString,
+				   const char **biosEntryString,
+				   const char **imaEntryString,
+				   json_object *nonceResponseJson);
 static uint32_t createQuote12(json_object **quoteResponseJson,
 			      const char *akFilename,
 			      const char *hostname,
 			      short port,
 			      const char *machineName,
-			      char *boottimeString,
-			      size_t boottimeStringLen,
 			      const char *nonceString,
 			      const TPM_PCR_SELECTION *pcrSelection,
+			      const char *biosInputFilename,
+			      const char *biosEntryString,
+			      const char *imaInputFilename,
+			      int	littleEndian,
+			      const char *imaEntryString,
 			      const char *srkPassword);
-static uint32_t sendBiosMeasurements(json_object **biosEntryResponseJson,
-				     const char *hostname,
-				     short port,
-				     const char *machineName,
-				     const char *nonce,
-				     const char *biosInputFilename,
-				     const char *biosEntryString,
-				     const char **imaEntryString);
-static uint32_t parseQuoteResponse(const char **biosEntryString,
-				   const char **imaEntryString,
-				   json_object *quoteResponseJson);
-TPM_RC runQuote12(TPML_PCR12_BANK 	*pcrBank,
-		  TPM_PCR_INFO_SHORT 	*pcrData,
-		  uint32_t 		*versionInfoSize,
-		  TPM_CAP_VERSION_INFO 	*versionInfo,
-		  uint32_t 		*signatureSize,
-		  uint8_t 		*signature,
-		  char 			*boottimeString,
-		  size_t 		boottimeStringLen,
-		  const unsigned char 	*nonceBin,
-		  const TPM_PCR_SELECTION *pcrSelection,
-		  TPM_KEY12 		*attestKey,
-		  const char 		*srkPassword);
+static uint32_t addBiosEntry(json_object *command,
+			     const char *biosInputFilename,
+			     const char *biosEntryString);
+static uint32_t addImaEntry(json_object *command,
+			    const char *imaInputFilename,
+			    int		littleEndian,
+			    const char *imaEntryString);
+static TPM_RC runQuote12(TPM_PCR_INFO_SHORT 	*pcrData,
+			 uint32_t 		*versionInfoSize,
+			 TPM_CAP_VERSION_INFO 	*versionInfo,
+			 uint32_t 		*signatureSize,
+			 uint8_t 		*signature,
+			 const unsigned char 	*nonceBin,
+			 const TPM_PCR_SELECTION *pcrSelection,
+			 TPM_KEY12 		*attestKey,
+			 const char 		*srkPassword);
 uint32_t getBootTime(char *boottime,
 		     size_t boottimeMax);
-#ifndef TPM_ACS_NOIMA
-static uint32_t sendImaMeasurements(json_object **imaEntryResponseJson,
-				    const char *hostname,
-				    short port,
-				    const char *machineName,
-				    const char *nonceString,
-				    const char *imaInputFilename,
-				    const char *imaEntryString);
-#endif
 
 int vverbose = 0;
 int verbose = 0;
@@ -153,6 +145,7 @@ int main(int argc, char *argv[])
     
 #ifndef TPM_ACS_NOIMA
     const char *imaInputFilename = NULL;
+    int 	littleEndian = TRUE;
 #endif
     const char *hostname = "localhost";		/* default server */
     const char 	*portString = NULL;		/* server port */
@@ -167,8 +160,6 @@ int main(int argc, char *argv[])
     int		connectionOnly = 0;		/* for server debug */
     int		nonceOnly = 0;			/* for server debug */
     int		quoteOnly = 0;			/* for server debug */
-    int		biosEntryOnly = 0;		/* for server debug */
-    int		imaEntryOnly = 0;		/* for server debug */
     int		badQuote = 0;			/* for server debug */
     int		makeBootTime = 0;		/* to defeat incremental event log */
 
@@ -259,6 +250,9 @@ int main(int argc, char *argv[])
 		printUsage();
 	    }
 	}
+	else if (strcmp(argv[i],"-be") == 0) {
+	    littleEndian = FALSE; 
+	}
 #endif
 	else if (strcmp(argv[i],"-co") == 0) {
 	    connectionOnly = 1;
@@ -268,12 +262,6 @@ int main(int argc, char *argv[])
 	}
 	else if (strcmp(argv[i],"-qo") == 0) {
 	    quoteOnly = 1;
-	}
-	else if (strcmp(argv[i],"-bo") == 0) {
-	    biosEntryOnly = 1;
-	}
-	else if (strcmp(argv[i],"-io") == 0) {
-	    imaEntryOnly = 1;
 	}
 	else if (strcmp(argv[i],"-bq") == 0) {
 	    badQuote = 1;
@@ -351,12 +339,6 @@ int main(int argc, char *argv[])
     clock_t quoteStart;
     clock_t quoteEnd;
     double quoteDiff = 0;
-    clock_t biosEventsStart;
-    clock_t biosEventsEnd;
-    double biosEventsDiff = 0;
-    clock_t imaEventsStart;
-    clock_t imaEventsEnd;
-    double imaEventsDiff = 0;
     clock_t totalStart;
     clock_t totalEnd;
     double totalDiff = 0;
@@ -372,14 +354,15 @@ int main(int argc, char *argv[])
 	/* if makeBootTime is true, override the real boot time and thus defeat the incremental
 	   event log optimization */
 	if ((rc == 0) && makeBootTime) {
-	    unsigned char boottimeBin[32];
+	    unsigned char boottimeBin[4];
 	    /* generate binary random value */
 	    int irc = RAND_bytes(boottimeBin, sizeof(boottimeBin));
 	    /* convert to boottimeBintext for the response */
-	    Array_Print(boottimeString, NULL, FALSE,
-			boottimeBin, sizeof(boottimeBin));
+	    time_t timet = (time_t)*(uint32_t *)boottimeBin;
+	    struct tm *tmptr = gmtime(&timet);
+	    strftime(boottimeString, sizeof(boottimeString), "%Y-%m-%d %H:%M:%S", tmptr);
 	    if (irc != 1) {
-		printf("ERROR: RAND_bytes failed for makeBootTime option\n");
+		printf("ERROR: RAND_bytes failed\n");
 		rc = ACE_OSSL_RAND;
 	    }
 	}
@@ -389,20 +372,28 @@ int main(int argc, char *argv[])
 	json_object *nonceResponseJson = NULL;		/* @1 */
 	const char *nonceString;
 	const char *pcrSelectString;
-	TPM_PCR_SELECTION pcrSelection;
+	const char *biosEntryString = "0";
+	const char *imaEntryString = "0";
 
 	/* get the quote nonce and pcr selection from the response */
-	nonceStart = time(NULL);
-	if ((rc == 0) &&
-	    !connectionOnly && !quoteOnly && !biosEntryOnly && !imaEntryOnly) {
-
-	    rc = getNonce(&nonceResponseJson,	/* freed @1 */
-			  hostname, port,
-			  machineName,
-			  &nonceString, &pcrSelectString);
+	if (!connectionOnly && !quoteOnly) {
+	    nonceStart = time(NULL);
+	    if (rc == 0) {
+		rc = getNonce(&nonceResponseJson,	/* freed @1 */
+			      hostname, port,
+			      machineName,
+			      boottimeString,
+			      sizeof(boottimeString));
+	    }
+	    if (rc == 0) {
+		rc = parseNonceResponse(&nonceString,
+					&pcrSelectString,
+					&biosEntryString,
+					&imaEntryString,
+					nonceResponseJson);
+	    }
+	    nonceEnd = time(NULL);
 	}
-	nonceEnd = time(NULL);
-
 	if ((rc == 0) && badQuote) {
 	    /* induce a quote failure by flipping a nonce bit.  Use an LSB so it remains
 	       printable */
@@ -416,78 +407,32 @@ int main(int argc, char *argv[])
 	quoteStart = time(NULL);
 	char *nonceStringSaved = NULL;			/* @5 */
 	char *pcrSelectStringSaved = NULL;
-	if ((rc == 0) && (quoteOnly || biosEntryOnly || imaEntryOnly)) {
+	if ((rc == 0) && (quoteOnly)) {
 	    rc = loadNonce(&nonceStringSaved,		/* freed @4 */
 			   &pcrSelectStringSaved);	/* freed @5 */
 	    nonceString = nonceStringSaved;
 	    pcrSelectString = pcrSelectStringSaved;
 	}
 	json_object *quoteResponseJson = NULL;		/* @2 */
-	if ((rc == 0) &&
-	    !connectionOnly && !nonceOnly && !biosEntryOnly && !imaEntryOnly) {
+	TPM_PCR_SELECTION pcrSelection;
+	if ((rc == 0) && !connectionOnly && !nonceOnly) {
 	    /* the server returns a TPM 1.2 TPM_PCR_SELECTION */
 	    rc = Structure_Scan(&pcrSelection,
-				(UnmarshalFunction_t)TSS_TPM_PCR_SELECTION_Unmarshal,
+				(UnmarshalFunction_t)TSS_TPM_PCR_SELECTION_Unmarshalu,
 				pcrSelectString);
 	}
-	if ((rc == 0) && !connectionOnly && !nonceOnly &&
-	    !biosEntryOnly && !imaEntryOnly) {
+	if ((rc == 0) && !connectionOnly && !nonceOnly) {
 
 	    rc = createQuote12(&quoteResponseJson,	/* freed @2 */
 			       aikFullName,
 			       hostname, port,
 			       machineName,
-			       boottimeString, sizeof(boottimeString),
 			       nonceString, &pcrSelection,
+			       biosInputFilename, biosEntryString,
+			       imaInputFilename, littleEndian, imaEntryString,
 			       srkPassword);
 	}
 	quoteEnd = time(NULL);
-	
-	/* determine if the server quote response asked for BIOS log, IMA log, or neither */
-	const char *biosEntryString = NULL;
-	const char *imaEntryString = NULL;
-	if ((rc == 0) &&
-	    !connectionOnly && !nonceOnly && !quoteOnly && !biosEntryOnly && !imaEntryOnly) {
-
-	    rc = parseQuoteResponse(&biosEntryString,
-				    &imaEntryString,
-				    quoteResponseJson);
-	}
-	if ((rc == 0) && (biosEntryOnly || imaEntryOnly)) {
-	    biosEntryString = "0";	/* simulate quote response */
-	    imaEntryString = "0"; 
-	}
-	/* send the BIOS event log measurements */
-	biosEventsStart = time(NULL);
-	json_object *biosEntryResponseJson = NULL;		/* @3 */
-	if ((rc == 0) &&
-	    !connectionOnly && !nonceOnly && !quoteOnly && !imaEntryOnly) {
-
-	    rc = sendBiosMeasurements(&biosEntryResponseJson,	/* freed @3 */
-				      hostname, port,
-				      machineName,
-				      nonceString, 
-				      biosInputFilename,
-				      biosEntryString,
-				      &imaEntryString);
-	}
-	biosEventsEnd = time(NULL);
-#ifndef TPM_ACS_NOIMA
-	imaEventsStart = time(NULL);
-	json_object *imaEntryResponseJson = NULL;		/* @6 */
-	if ((rc == 0) &&
-	    !connectionOnly && !nonceOnly && !quoteOnly && !biosEntryOnly &&
-	    (imaInputFilename != NULL)) {
-
-	    rc = sendImaMeasurements(&imaEntryResponseJson,	/* freed @6 */
-				     hostname, port,
-				     machineName,
-				     nonceString, 
-				     imaInputFilename,
-				     imaEntryString);
-	}
-	imaEventsEnd = time(NULL);
-#endif
 	if ((rc == 0) && connectionOnly) {
 	    int sock_fd = -1;		/* error value, for close noop */
 	    if (rc == 0) {
@@ -497,19 +442,13 @@ int main(int argc, char *argv[])
 	}
 	JS_ObjectFree(nonceResponseJson);	/* @1 */
 	JS_ObjectFree(quoteResponseJson);	/* @2 */
-	JS_ObjectFree(biosEntryResponseJson);	/* @3 */
 	free(nonceStringSaved);			/* @4 */
 	free(pcrSelectStringSaved);		/* @5 */
-#ifndef TPM_ACS_NOIMA
-	JS_ObjectFree(imaEntryResponseJson);	/* @6 */
-#endif
 	if (passes > 1) {
 	    printf("End pass %u\n", passNumber+1);
 	}
 	nonceDiff += difftime(nonceEnd, nonceStart);
 	quoteDiff += difftime(quoteEnd, quoteStart);
-	biosEventsDiff += difftime(biosEventsEnd , biosEventsStart);
-	imaEventsDiff += difftime(imaEventsEnd, imaEventsStart);
 	totalEnd = time(NULL);
 	totalDiff += difftime(totalEnd, totalStart);
     }	/* end pass count */
@@ -518,14 +457,10 @@ int main(int argc, char *argv[])
 	printf("\n");
 	printf("Nonce time \t\t%f\n", nonceDiff);
 	printf("Quote time \t\t%f\n", quoteDiff);
-	printf("BiosEvents time \t%f\n", biosEventsDiff);
-	printf("ImaEvents time \t\t%f\n", imaEventsDiff);
 	printf("Total time \t\t%f\n", totalDiff);
 	printf("\n");
 	printf("Nonce time per pass \t\t%f\n", nonceDiff / passes);
 	printf("Quote time per pass \t\t%f\n", quoteDiff / passes);
-	printf("biosEvents time per pass \t%f\n", biosEventsDiff / passes);
-	printf("ImaEvents time per pass \t%f\n", imaEventsDiff / passes);
 	printf("Total time per pass \t\t%f\n", totalDiff / passes);
 	printf("\n");
     }
@@ -584,9 +519,10 @@ static uint32_t loadNonce(char **nonceStringSaved,
    bitmap.
 
    {
-   "command":"nonce",
+   "command":"nonce12",
    "hostname":"cainl.watson.ibm.com",
    "userid":"kgold"
+   "boottime":"2016-03-21 09:08:25"
    }
 
    The server response is of the form:
@@ -595,15 +531,23 @@ static uint32_t loadNonce(char **nonceStringSaved,
    "response":"nonce",
    "nonce":"5ef7c0cf2bc1909d27d1acf793a5fd252be7bd29aca6ea191a4f40a60f814b00",
    "pcrselect":"00000002000b03ff0000000403000400"
+   "biosentry":"0"
+   "imaentry":"0"
+
+   or
+   
+   "biosentry":"-1",
+   "imaentry":"n"	or incremental
    }
+
 */
 
 static uint32_t getNonce(json_object **nonceResponseJson,	/* freed by caller */
 			 const char *hostname,
 			 short port,
 			 const char *machineName,
-			 const char **nonceString,
-			 const char **pcrSelectString)
+			 char *boottimeString,
+			 size_t boottimeStringLen)
 {
     uint32_t 	rc = 0;
     uint32_t 	cmdLength;
@@ -612,12 +556,21 @@ static uint32_t getNonce(json_object **nonceResponseJson,	/* freed by caller */
     uint8_t 	*rspBuffer = NULL;
     
     if (verbose) printf("INFO: getNonce\n");
+    /* return the boot time for the command packet.  This is done at the 'local' layer because
+       the upper layer may not have access to the clock. */
+    if (rc == 0) {
+	/* if the upper layer already determined the boot time, leave it unaltered */
+	if (boottimeString[0] == '\0') {
+	    rc = getBootTime(boottimeString, boottimeStringLen);
+	}
+    }
     /* construct the get nonce command packet */
     if (rc == 0) {
 	rc = JS_Cmd_Nonce(&cmdLength,
 			  (char **)&cmdBuffer,		/* freed @1 */
 			  "nonce12",			/* command */
-			  machineName);
+			  machineName,
+			  boottimeString);
     }
     /* send the json command and receive the response */
     if (rc == 0) {
@@ -635,33 +588,66 @@ static uint32_t getNonce(json_object **nonceResponseJson,	/* freed by caller */
 	if (verbose) JS_ObjectTrace("INFO: getNonce: response", *nonceResponseJson);
     }
     if (rc == 0) {
-	rc = JS_Rsp_Nonce(nonceString, pcrSelectString,
-			  *nonceResponseJson);
+	rc = JS_Rsp_Nonce(*nonceResponseJson);
     }
     free(cmdBuffer);		/* @1 */
     free(rspBuffer);		/* @2 */
     return rc;
 }
 
+/* parseNonceResponse() parses the nonce response.  It returns the nonce, PCR select, and BIOS and
+   IMA entry requests.
+
+   Format is:
+
+   "response":"nonce",
+   "nonce":"9f86c24f07e946f380d8d0b4cabef9eb78e97ba78a7a9383ccad38b0e48aae6e",
+   "pcrselect":"00000002000b03ff0700000403000000",
+   "biosentry":"0",
+   "imaentry":"0"
+
+*/
+
+static uint32_t parseNonceResponse(const char **nonceString,
+				   const char **pcrSelectString,
+				   const char **biosEntryString,
+				   const char **imaEntryString,
+				   json_object *nonceResponseJson)
+{
+    uint32_t 	rc = 0;
+
+    if (vverbose) printf("INFO: parseNonceResponse\n");
+    if (rc == 0) {
+	rc = JS_ObjectGetString(nonceString, "nonce", ACS_JSON_HASH_MAX,
+				nonceResponseJson);
+    }
+    if (rc == 0) {
+	rc = JS_ObjectGetString(pcrSelectString, "pcrselect", ACS_JSON_PCRSELECT_MAX,
+				nonceResponseJson);
+    }
+    if (rc == 0) {
+	rc = JS_ObjectGetString(biosEntryString, "biosentry", ACS_JSON_BOOL_MAX,
+				nonceResponseJson);
+    }
+    if (rc == 0) {
+	rc = JS_ObjectGetString(imaEntryString, "imaentry", ACS_JSON_BOOL_MAX,
+				nonceResponseJson);
+    }
+    return rc;
+}
+
+
+
 /* createQuote12() runs a TPM quote, and sends the quote command to the server.  
 
    "command":"quote",
    "hostname":"cainl.watson.ibm.com",
    "boottime":"2016-03-21 09:08:25"
-   "pcrnshan":"06e15db2520f67294627681175d58a5cfff7a475ca8a39f60ad29aacbac596c6",
    "quoted":"hexascii",
    "signature":"hexascii",
    }
    {
    "response":"quote"
-
-   and optionally
-   
-   "biosentry":"0"
-
-   or
-   
-   "imaentry":"0"	or incremental
    }
 
 */
@@ -671,15 +657,20 @@ static uint32_t createQuote12(json_object **quoteResponseJson,	/* freed by calle
 			      const char *hostname,
 			      short port,
 			      const char *machineName,
-			      char *boottimeString,
-			      size_t boottimeStringLen,
 			      const char *nonceString,
 			      const TPM_PCR_SELECTION *pcrSelection,
+			      const char *biosInputFilename,
+			      const char *biosEntryString,
+			      const char *imaInputFilename,
+			      int	littleEndian,
+			      const char *imaEntryString,
 			      const char *srkPassword)
 {
     uint32_t 	rc = 0;
     if (verbose) printf("INFO: createQuote12\n");
     if (vverbose) printf("createQuote12: nonce %s\n", nonceString);
+    if (vverbose) printf("createQuote12: biosEntryString %s\n", biosEntryString);
+    if (vverbose) printf("createQuote12: biosInputFilename %s\n", biosInputFilename);
     /* convert nonce to binary and use as qualifyingData */
     unsigned char *nonceBin = NULL;
     size_t nonceLen;
@@ -691,27 +682,24 @@ static uint32_t createQuote12(json_object **quoteResponseJson,	/* freed by calle
     TPM_KEY12 attestKey;	/* quote signing key */
     if (rc == 0) {
 	rc = TSS_File_ReadStructure(&attestKey,
-				    (UnmarshalFunction_t)TSS_TPM_KEY12_Unmarshal,
+				    (UnmarshalFunction_t)TSS_TPM_KEY12_Unmarshalu,
 				    akFilename);
     }
     /* run the TPM_Quote2 using the supplied nonce and pcrSelect.
        
        Returns the TPM_Quote2 outputs in binary
     */
-    TPML_PCR12_BANK pcrBank;
     TPM_PCR_INFO_SHORT pcrData;
     uint32_t versionInfoSize;
     TPM_CAP_VERSION_INFO versionInfo;
     uint32_t signatureBinSize;
     uint8_t signatureBin[MAX_RSA_KEY_BYTES];
     if (rc == 0) {
-	rc = runQuote12(&pcrBank,
-			&pcrData,
+	rc = runQuote12(&pcrData,
 			&versionInfoSize,
 			&versionInfo,
 			&signatureBinSize,
 			signatureBin,
-			boottimeString, boottimeStringLen,
 			nonceBin,
 			pcrSelection,
 			&attestKey,		/* quote signing key */
@@ -722,14 +710,14 @@ static uint32_t createQuote12(json_object **quoteResponseJson,	/* freed by calle
     if (rc == 0) {
 	rc = Structure_Print(&pcrDataString, 		/* freed @2 */
 			     &pcrData,
-			     (MarshalFunction_t)TSS_TPM_PCR_INFO_SHORT_Marshal);
+			     (MarshalFunction_t)TSS_TPM_PCR_INFO_SHORT_Marshalu);
     }
     /* versionInfo to string */
     char *versionInfoString = NULL;
     if (rc == 0) {
 	rc = Structure_Print(&versionInfoString, 	/* freed @3 */
 			     &versionInfo,
-			     (MarshalFunction_t)TSS_TPM_CAP_VERSION_INFO_Marshal);
+			     (MarshalFunction_t)TSS_TPM_CAP_VERSION_INFO_Marshalu);
     }
     /* signature array to string */
     char *signatureString = NULL;
@@ -738,31 +726,33 @@ static uint32_t createQuote12(json_object **quoteResponseJson,	/* freed by calle
 			       signatureBin,
 			       signatureBinSize);
     }
-    /* pcrBank to string */
-    /* convert all PCRs from binary to text, ignore the bit mask */
-    char pcrSha1String[IMPLEMENTATION_PCR][(SHA1_DIGEST_SIZE * 2) + 1];
-    uint32_t	pcrNum;			/* iterate through PCRs */
-
-    /* iterate through PCR, convert binary to text*/
-    for (pcrNum = 0 ; (rc == 0) && (pcrNum < IMPLEMENTATION_PCR) ; pcrNum++) {
-	Array_Print(pcrSha1String[pcrNum], NULL, FALSE,
-		    pcrBank.digests[pcrNum], SHA1_DIGEST_SIZE);
-    }
-    /*	
-      Construct the Quote client to server command
+    /*
+       Construct the Quote client to server command
     */
+    json_object *command = NULL;
+    if (rc == 0) {
+	rc = JS_Cmd_NewQuote12(&command,		/* freed @7 */
+			       machineName,
+			       pcrDataString,
+			       versionInfoString,
+			       signatureString);
+    }
+    /* add the BIOS event log to the response if requested */
+    if (rc == 0) {
+	rc = addBiosEntry(command, biosInputFilename, biosEntryString);
+    }
+    /* adds the IMA events from the event log file 'imaInputFilename' */
+    if (rc == 0) {
+	rc = addImaEntry(command, imaInputFilename, littleEndian, imaEntryString);
+    }
     uint32_t cmdLength;
     uint8_t *cmdBuffer = NULL;
     uint32_t rspLength;
     uint8_t *rspBuffer = NULL;
     if (rc == 0) {
-	rc = JS_Cmd_Quote12(&cmdLength,(char **)&cmdBuffer,		/* freed @5 */
-			    machineName,
-			    boottimeString,
-			    pcrSha1String,
-			    pcrDataString,
-			    versionInfoString,
-			    signatureString);
+	rc = JS_ObjectSerialize(&cmdLength,
+				(char **)&cmdBuffer,	/* freed @3 */
+				command);		/* @1 */
     }
     /* send the json command and receive the response */
     if (rc == 0) {
@@ -782,98 +772,51 @@ static uint32_t createQuote12(json_object **quoteResponseJson,	/* freed by calle
     if (rc == 0) {
 	rc = JS_Rsp_Quote(*quoteResponseJson);
     }
-    free(nonceBin);		/* @1 */
-    free(pcrDataString);	/* @2 */
-    free(versionInfoString);	/* @3 */
-    free(signatureString);	/* @4 */
-    free(cmdBuffer);		/* @5 */
-    free(rspBuffer);		/* @6 */
+    free(nonceBin);			/* @1 */
+    free(pcrDataString);		/* @2 */
+    free(versionInfoString);		/* @3 */
+    free(signatureString);		/* @4 */
+    free(cmdBuffer);			/* @5 */
+    free(rspBuffer);			/* @6 */
     return rc;
 }
 
-/* parseQuoteResponse() parses the quote respoonse and determines whether a BIOS log, an IMA log, or
-   neither is requested.
-*/
+/* addBiosEntry() adds the BIOS events from the event log file 'biosInputFilename'.
 
-static uint32_t parseQuoteResponse(const char **biosEntryString,
-				   const char **imaEntryString,
-				   json_object *quoteResponseJson)
-{
-    uint32_t 	rc = 0;
+   It is conditional on the server request json
 
-    if (vverbose) printf("INFO: parseQuoteResponse \n");
-    if (rc == 0) {
-	rc = JS_ObjectGetString(biosEntryString, "biosentry", quoteResponseJson);
-    }
-    if (rc == 0) {
-	rc = JS_ObjectGetString(imaEntryString, "imaentry", quoteResponseJson);
-    }
-    return rc;
-}
- 
-/* sendBiosMeasurements() sends BIOS events from the event log file 'biosInputFilename'.
-
-   If no BIOS measurements are required, imaEntryString has already been set by the caller.  If BIOS
-   measurements are required, imaEntryString is set here by the response.
-
-   {
-   "command":"biosentry12",
-   "hostname":"cainl.watson.ibm.com",
-   "nonce":"1298d83cdd8c50adb58648d051b1a596b66698758b8d0605013329d0b45ded0c",
    "event1":"hexascii",
-   }
-   {
-   "response":"biosentry"
-   "imaentry":"00000000"
-   }
-
 */
-
-static uint32_t sendBiosMeasurements(json_object **biosEntryResponseJson, /* freed by caller */
-				     const char *hostname,
-				     short port,
-				     const char *machineName,
-				     const char *nonce,
-				     const char *biosInputFilename,
-				     const char *biosEntryString,
-				     const char **imaEntryString)
+   
+static uint32_t addBiosEntry(json_object *command,
+			     const char *biosInputFilename,
+			     const char *biosEntryString)
 {
     uint32_t 	rc = 0;
     
-    if (vverbose) printf("sendBiosMeasurements: Entry\n");
+    if (vverbose) printf("addBiosEntry: Entry\n");
     int biosEntry;	/* response as an integer */
     if (rc == 0) {
 	sscanf(biosEntryString, "%u", &biosEntry);
     }    
     if (rc == 0) {
 	if (biosEntry >= 0) {
-	    if (vverbose) printf("sendBiosMeasurements: start with biosEntry %d\n", biosEntry);
+	    if (vverbose) printf("addBiosEntry: start with biosEntry %d\n", biosEntry);
 	}
 	else {
-	    if (vverbose) printf("sendBiosMeasurements: no BIOS measurements required\n");
+	    if (vverbose) printf("addBiosEntry: no BIOS measurements required\n");
 	    return 0;
 	}
     }
-    json_object *command = NULL;
-    /* The client sends its boot time to the server. */
-    /* add command and client hostname */
-    if (rc == 0) {
-	rc = JS_Cmd_NewBiosEntry(&command,
-				 "biosentry12",
-				 machineName,
-				 nonce);
-    }
     if (biosInputFilename != NULL) {
-	/* create the BIOS entry command json */
-    
-	/* open the BIOS event log file */
+    	/* open the BIOS event log file */
 	FILE *infile = NULL;
 	if (rc == 0) {
 	    infile = fopen(biosInputFilename,"rb");	/* closed @2 */
 	    if (infile == NULL) {
-		printf("ERROR: sendBiosMeasurements: Unable to open event log file '%s'\n",
+		printf("ERROR: addBiosEntry: Unable to open event log file '%s'\n",
 		       biosInputFilename);
-		rc = 1;
+		rc = ACE_FILE_OPEN;
 	    }
 	}
 	TCG_PCR_EVENT 		event;		/* TPM 1.2 format header event */
@@ -887,7 +830,7 @@ static uint32_t sendBiosMeasurements(json_object **biosEntryResponseJson, /* fre
 	    }
 	    /* debug tracing */
 	    if (vverbose && !endOfFile && (rc == 0)) {
-		printf("sendBiosMeasurements: line %u\n", lineNum);
+		printf("addBiosEntry: line %u\n", lineNum);
 		TSS_EVENT_Line_Trace(&event);
 	    }
 	    /* don't send no action events */
@@ -907,188 +850,98 @@ static uint32_t sendBiosMeasurements(json_object **biosEntryResponseJson, /* fre
 	    fclose(infile);		/* @2 */
 	}
     }		/* biosInputFilename not NULL */
-    uint32_t cmdLength;
-    uint8_t *cmdBuffer = NULL;
-    uint32_t rspLength;
-    uint8_t *rspBuffer = NULL;
-    if (rc == 0) {
-	rc = JS_ObjectSerialize(&cmdLength,
-				(char **)&cmdBuffer,	/* freed @3 */
-				command);		/* @1 */
-    }
-    /* send the json command and receive the response */
-    if (rc == 0) {
-	rc = Socket_Process(&rspBuffer, &rspLength,	/* freed @4 */
-			    hostname, port,
-			    cmdBuffer, cmdLength);
-    }
-    /* parse json stream to object */
-    if (rc == 0) {
-	rc = JS_ObjectUnmarshal(biosEntryResponseJson,		/* freed by caller */
-				rspBuffer);
-    }
-    /* for debug */
-    if (rc == 0) {
-	if (verbose) JS_ObjectTrace("INFO: sendBiosMeasurements: response", *biosEntryResponseJson);
-    }
-#ifndef TPM_ACS_NOIMA
-    if (rc == 0) {
-	rc = JS_Rsp_Bios(imaEntryString,
-			 *biosEntryResponseJson);
-    }
-#else
-    imaEntryString = imaEntryString;
-#endif
-    free(cmdBuffer);		/* @3 */
-    free(rspBuffer);		/* @4 */
     return rc;
 }
 
-/*
-  {
-  "command":"imasentry",
-  "hostname":"cainl.watson.ibm.com",
-  "nonce":"1298d83cdd8c50adb58648d051b1a596b66698758b8d0605013329d0b45ded0c",
-  "imaentry":"0",
-  "event0":"hexascii",
-  }
-  {
-  "response":"imaentry"
-  }
-*/
-
 #ifndef TPM_ACS_NOIMA
 
-static uint32_t sendImaMeasurements(json_object **imaEntryResponseJson,
-				    const char *hostname,
-				    short port,
-				    const char *machineName,
-				    const char *nonceString,
-				    const char *imaInputFilename,
-				    const char *imaEntryString)
-{
-    uint32_t rc = 0;
-    if (vverbose) printf("sendImaMeasurements: Entry\n");
+/* addImaEntry() adds the IMA events from the event log file 'imaInputFilename'.
 
+   It is conditional on the server request json
+
+   "imaevent1":"0000000aa97937766682b65c10a07c5c50363745f8e08b2700000007696d612d7369670000003a280000007368613235363a00078a025f29541d6c5f3d4232c9028d88b606a962114ed5471f091d9cc85acadb060000002f696e69740000000000",
+*/
+   
+static uint32_t addImaEntry(json_object *command,
+			    const char *imaInputFilename,
+			    int		littleEndian,
+			    const char *imaEntryString)	/* FIXME */
+{
+    uint32_t 	rc = 0;
+
+    if (vverbose) printf("addImaEntry: Entry\n");
     int imaEntry;	/* response as an integer */
     if (rc == 0) {
 	sscanf(imaEntryString, "%u", &imaEntry);
     }    
     if (rc == 0) {
 	if (imaEntry >= 0) {
-	    if (vverbose) printf("sendImaMeasurements: start with imaEntry %d\n", imaEntry);
+	    if (vverbose) printf("addImaEntry: start with imaEntry %d\n", imaEntry);
 	}
 	else {
-	    if (vverbose) printf("sendImaMeasurements: no measurements required\n");
+	    if (vverbose) printf("addImaEntry: no IMA measurements required\n");
 	    return 0;
 	}
     }
-    json_object *command = NULL;
-    /* add command and client hostname */
-    if (rc == 0) {
-	rc = JS_Cmd_NewImaEntry(&command,
-				"imaentry12",
-				machineName,
-				nonceString,
-				imaEntryString);
-    }
-    /* open the IMA event log file */
-    FILE *inFile = NULL;
-    if (rc == 0) {
-	inFile = fopen(imaInputFilename,"rb");	/* closed @2 */
-	if (inFile == NULL) {
-	    printf("ERROR: sendImaMeasurements: Unable to open event log file '%s'\n",
-		   imaInputFilename);
-	    rc = 1;
-	}
-    }
-    /* skip over entries that have already been sent.  If end of file is reached, then either:
-
-       the measurement log has been tampered, with entries deleted
-       the server has a problem, asking for measurements that don't exist
-    */
-    ImaEvent 	imaEvent;
-    int 	event;
-    int 	endOfFile = FALSE;
-    if (vverbose) printf("sendImaMeasurements: skipping to event %u\n", imaEntry);
-    for (event = 0 ; (rc == 0) && (event < imaEntry) && !endOfFile ; event++) {
+    if (imaInputFilename != NULL) {
+	/* open the IMA event log file */
+	FILE *inFile = NULL;
 	if (rc == 0) {
-	    IMA_Event_Init(&imaEvent);
-	    rc = IMA_Event_ReadFile(&imaEvent,	/* freed by caller */
-				    &endOfFile,
-				    inFile,
-				    TRUE);		/* little endian */
+	    inFile = fopen(imaInputFilename,"rb");	/* closed @2 */
+	    if (inFile == NULL) {
+		printf("ERROR: addImaEntry: Unable to open event log file '%s'\n",
+		       imaInputFilename);
+		rc = ACE_FILE_OPEN;
+	    }
+	}
+	ImaEvent 		imaEvent;
+	int 			event;
+	int 			endOfFile = FALSE;
+	if (vverbose) printf("addImaEntry: skipping to event %u\n", imaEntry);
+	for (event = 0 ; (rc == 0) && (event < imaEntry) && !endOfFile ; event++) {
+	    if (rc == 0) {
+		IMA_Event_Init(&imaEvent);
+		rc = IMA_Event_ReadFile(&imaEvent,	/* freed by caller */
+					&endOfFile,
+					inFile,
+					littleEndian);		/* little endian */
+		IMA_Event_Free(&imaEvent);
+	    }
+	    /* the measurements to be skipped had better still be there */
+	    if (rc == 0) {
+		if (endOfFile) {
+		    if (vverbose) printf("addImaEntry: end of file skiping entry %u\n",
+					 event);
+		    rc = ACE_FILE_READ;
+		}
+	    }	
+	}
+	/* read and send the rest of the events, until end of file */
+	for ( ; (rc == 0) && !endOfFile; event++) {
+	    if (rc == 0) {
+		if (vverbose) printf("addImaEntry: reading event %u\n", event);
+		IMA_Event_Init(&imaEvent);
+		rc = IMA_Event_ReadFile(&imaEvent,	/* freed by caller */
+					&endOfFile,
+					inFile,
+					littleEndian);		/* little endian */
+	    }
+	    if ((rc == 0) && !endOfFile) {
+		if (vverbose) IMA_Event_Trace(&imaEvent, TRUE);
+	    }
+	    if ((rc == 0) && !endOfFile) {
+		/* serialize and add this IMA event to the json command */
+		if (vverbose) printf("addImaEntry: add entry %u\n", event);
+		rc = JS_Cmd_AddImaEvent(command,
+					&imaEvent,				     
+					event);
+	    }
 	    IMA_Event_Free(&imaEvent);
 	}
-	/* the measurements to be skipped had better still be there */
-	if (rc == 0) {
-	    if (endOfFile) {
-		if (vverbose) printf("sendImaMeasurements: end of file skiping entry %u\n", event);
-		rc = 1;
-	    }
-	}	
-    }
-    /* if not end of file, have more measurements to send */
-    /* add number of first ima entry */
-    if ((rc == 0) && !endOfFile) {
-	rc = JS_Cmd_AddImaEntry(command,
-				imaEntryString);
-	
-    }
-    /* read and send the rest of the events, until end of file */
-    for ( ; (rc == 0) && !endOfFile; event++) {
-	if (rc == 0) {
-	    if (vverbose) printf("sendImaMeasurements: reading event %u\n", event);
-	    IMA_Event_Init(&imaEvent);
-	    rc = IMA_Event_ReadFile(&imaEvent,	/* freed by caller */
-				    &endOfFile,
-				    inFile,
-				    TRUE);		/* little endian */
+	if (inFile != NULL) {
+	    fclose(inFile);		/* @2 */
 	}
-	if ((rc == 0) && !endOfFile) {
-	    if (vverbose) IMA_Event_Trace(&imaEvent, TRUE);
-	}
-	if ((rc == 0) && !endOfFile) {
-	    /* serialize and add this IMA event to the json command */
-	    if (vverbose) printf("sendImaMeasurements: add entry %u\n", event);
-	    rc = JS_Cmd_AddImaEvent(command,
-				    &imaEvent,				     
-				    event);
-	}
-	IMA_Event_Free(&imaEvent);
-    }
-    uint32_t cmdLength;
-    uint8_t *cmdBuffer = NULL;
-    uint32_t rspLength;
-    uint8_t *rspBuffer = NULL;
-    if (rc == 0) {
-	rc = JS_ObjectSerialize(&cmdLength,
-				(char **)&cmdBuffer,	/* freed @1 */
-				command);		/* @1 */
-    }
-    /* send the json command and receive the response */
-    if (rc == 0) {
-	rc = Socket_Process(&rspBuffer, &rspLength,	/* freed @2 */
-			    hostname, port,
-			    cmdBuffer, cmdLength);
-    }
-    /* parse json stream to object */
-    if (rc == 0) {
-	rc = JS_ObjectUnmarshal(imaEntryResponseJson,		/* freed by caller */
-				rspBuffer);
-    }
-    /* for debug */
-    if (rc == 0) {
-	if (verbose) JS_ObjectTrace("INFO: sendImaMeasurements: response", *imaEntryResponseJson);
-    }
-    if (rc == 0) {
-	rc = JS_Rsp_Ima(*imaEntryResponseJson);
-    }
-    if (inFile != NULL) {
-	fclose(inFile);		/* @2 */
-    }
-    free(cmdBuffer);		/* @1 */
-    free(rspBuffer);		/* @2 */
+    }		/* imaInputFilename not NULL */
     return rc;
 }
 
@@ -1113,25 +966,20 @@ static uint32_t sendImaMeasurements(json_object **imaEntryResponseJson,
    /// @param[in] srkPassword Attestation public key parent password
    */
 
-TPM_RC runQuote12(TPML_PCR12_BANK 	*pcrBank,
-		  TPM_PCR_INFO_SHORT 	*pcrData,
-		  uint32_t 		*versionInfoSize,
-		  TPM_CAP_VERSION_INFO 	*versionInfo,
-		  uint32_t 		*signatureSize,
-		  uint8_t 		*signature,
-		  char 			*boottimeString,
-		  size_t 		boottimeStringLen,
-		  const unsigned char 	*nonceBin,
-		  const TPM_PCR_SELECTION *pcrSelection,
-		  TPM_KEY12 		*attestKey,	/* quote signing key */
-		  const char 		*srkPassword)
+static TPM_RC runQuote12(TPM_PCR_INFO_SHORT 	*pcrData,
+			 uint32_t 		*versionInfoSize,
+			 TPM_CAP_VERSION_INFO 	*versionInfo,
+			 uint32_t 		*signatureSize,
+			 uint8_t 		*signature,
+			 const unsigned char 	*nonceBin,
+			 const TPM_PCR_SELECTION *pcrSelection,
+			 TPM_KEY12 		*attestKey,	/* quote signing key */
+			 const char 		*srkPassword)
 {
     uint32_t 		rc = 0;
     TPM_RC 		rc1;
     TSS_CONTEXT		*tssContext = NULL;
     TPM_HANDLE 		keyHandle = 0;
-    int			pcr10Match = 0;
-    TPML_PCR12_BANK 	pcrBankCheck;
     
     /* Start a TSS context */
     if (rc == 0) {
@@ -1151,55 +999,19 @@ TPM_RC runQuote12(TPML_PCR12_BANK 	*pcrBank,
 			  attestKey, sessionHandle, srkPassword);
     }
     /* sign the quote */
-    while ((rc == 0) && !pcr10Match) {
-	    
-	/* read all the PCRs for each bank specified in pcrSelection.  It ignores the bit mask, just
-	   for debug and demo displays. This affects performance slightly, but PCR read time is
-	   negligible compared to the quote time.*/
-	if (rc == 0) {
-	    rc = readPcrs12(tssContext,
-			    pcrBank,
-			    pcrSelection);
-	}
-	if (rc == 0) {
-	    if (vverbose) printf("runQuote12: sign quote with key handle %08x\n", keyHandle);
-	    rc = signQuote12(tssContext,
-			     pcrData,
-			     versionInfoSize,
-			     versionInfo,
-			     signatureSize,
-			     signature,
-			     keyHandle,
-			     nonceBin,
-			     pcrSelection,
-			     sessionHandle, NULL);	/* enpty password */
-	}   
-	/* Since read and quote are not atomic, read again and make sure PCR's have not changed.
-	   This should not be an issue for BIOS, since BIOS is exited long before the first quote.
-	   It could be for IMA, since extends can come between the read and quote. */
-	if (rc == 0) {
-	    rc = readPcrs12(tssContext,
-			    &pcrBankCheck,
-			    pcrSelection);
-	}
-	/* Currently, only PCR 10, the IMA PCR, is checked.  All PCRs are read because (1) the code
-	   is already there, and (2) other PCRs may be of interest in the future. */
-	int		irc;
-	pcr10Match = 1;
-	if (rc == 0) {
-	    irc = memcmp(pcrBank->digests[IMA_PCR],
-			 pcrBankCheck.digests[IMA_PCR],
-			 SHA1_DIGEST_SIZE);
-	    if (irc != 0) {
-		if (vverbose) printf("runQuote12: PCR %u mismatch, retry\n",
-					 IMA_PCR);
-		pcr10Match = 0;
-	    }
-	}
-	if ((rc == 0) && pcr10Match) {
-	    if (vverbose) printf("runQuote12: PCR matched before and after quote\n");
-	}
-    }
+    if (rc == 0) {
+	if (vverbose) printf("runQuote12: sign quote with key handle %08x\n", keyHandle);
+	rc = signQuote12(tssContext,
+			 pcrData,
+			 versionInfoSize,
+			 versionInfo,
+			 signatureSize,
+			 signature,
+			 keyHandle,
+			 nonceBin,
+			 pcrSelection,
+			 sessionHandle, NULL);	/* enpty AIK password */
+    }   
     /* flush the quote signing key */
     if ((tssContext != NULL) && (keyHandle != 0)) {
 	rc1 = flushSpecific(tssContext, keyHandle, TPM_RT_KEY);
@@ -1219,13 +1031,6 @@ TPM_RC runQuote12(TPML_PCR12_BANK 	*pcrBank,
 	TPM_RC rc1 = TSS_Delete(tssContext);
 	if (rc == 0) {
 	    rc = rc1;
-	}
-    }
-    /* return the boot time for the quote command packet. */
-    if (rc == 0) {
-	/* if the upper layer already determined the boot time, leave it unaltered */
-	if (boottimeString[0] == '\0') {
-	    rc = getBootTime(boottimeString, boottimeStringLen);
 	}
     }
     return rc;
@@ -1333,8 +1138,6 @@ static void printUsage(void)
     printf("[-co connection only]\n");
     printf("[-no nonce only]\n");
     printf("[-qo quote only]\n");
-    printf("[-bo biosentry only]\n");
-    printf("[-io imaentry only]\n");
     printf("[-bq create bad quote]\n");
     printf("[-bt make random boot time (to defeat incremental event log)\n");
     printf("[-p pass count (default 1)]\n");

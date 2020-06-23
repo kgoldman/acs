@@ -3,9 +3,9 @@
 /*		TPM 2.0 Attestation - Common TSS Functions	  		*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: commontss.c 1159 2018-04-17 15:10:01Z kgoldman $		*/
+/*            $Id: commontss.c 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016, 2017.					*/
+/* (c) Copyright IBM Corporation 2016 - 2020.					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -42,12 +42,12 @@
 #include <string.h>
 #include <stdint.h>
 
-#include <tss2/tss.h>
-#include <tss2/tssutils.h>
-#include <tss2/tssprint.h>
-#include <tss2/tssresponsecode.h>
-#include <tss2/tssmarshal.h>
-#include <tss2/Unmarshal_fp.h>
+#include <ibmtss/tss.h>
+#include <ibmtss/tssutils.h>
+#include <ibmtss/tssprint.h>
+#include <ibmtss/tssresponsecode.h>
+#include <ibmtss/tssmarshal.h>
+#include <ibmtss/Unmarshal_fp.h>
 
 #include "ekutils.h"
 
@@ -423,13 +423,13 @@ TPM_RC activatecredential(TSS_CONTEXT *tssContext,
     if (rc == 0) {
 	tmpptr = credentialBlobBin;
 	tmpsize = credentialBlobBinSize;
-	rc = TPM2B_ID_OBJECT_Unmarshal(&in.credentialBlob, &tmpptr, &tmpsize);
+	rc = TSS_TPM2B_ID_OBJECT_Unmarshalu(&in.credentialBlob, &tmpptr, &tmpsize);
     }
     /* unmarshal the secret */
     if (rc == 0) {
 	tmpptr = secretBin;
 	tmpsize = secretBinSize;
-	rc = TPM2B_ENCRYPTED_SECRET_Unmarshal(&in.secret, &tmpptr, &tmpsize);
+	rc = TSS_TPM2B_ENCRYPTED_SECRET_Unmarshalu(&in.secret, &tmpptr, &tmpsize);
     }
     /* using the EK requires a policy session */
     TPMI_SH_AUTH_SESSION 	sessionHandle;
@@ -513,6 +513,57 @@ TPM_RC makePolicySession(TSS_CONTEXT *tssContext,
 	const char *submsg;
 	const char *num;
 	printf("ERROR: makePolicySession: TPM2_StartAuthSession failed, rc %08x\n", rc);
+	TSS_ResponseCode_toString(&msg, &submsg, &num, rc);
+	printf("%s%s%s\n", msg, submsg, num);
+	rc = EXIT_FAILURE;
+    }
+    return rc;
+}
+
+/* makeHmacSession() makes an HMAC session that can be used as an audit session.
+
+   Returns the session handle.
+*/
+
+TPM_RC makeHmacSession(TSS_CONTEXT *tssContext,
+		       TPMI_SH_AUTH_SESSION *sessionHandle)
+{
+    TPM_RC 			rc = 0;
+    StartAuthSession_In 	startAuthSessionIn;
+    StartAuthSession_Out 	startAuthSessionOut;
+    StartAuthSession_Extra	startAuthSessionExtra;
+
+    /* start a policy session */
+    if (rc == 0) {
+	startAuthSessionIn.sessionType = TPM_SE_HMAC;
+	startAuthSessionIn.tpmKey = TPM_RH_NULL;
+	startAuthSessionIn.bind = TPM_RH_NULL;
+	startAuthSessionIn.symmetric.algorithm = TPM_ALG_XOR;
+	startAuthSessionIn.authHash = TPM_ALG_SHA256;
+	startAuthSessionIn.symmetric.keyBits.xorr = TPM_ALG_SHA256;
+	startAuthSessionIn.symmetric.mode.sym = TPM_ALG_NULL;
+	startAuthSessionExtra.bindPassword = NULL;
+    }   
+    /* call TSS to execute the command */
+    if (rc == 0) {
+	rc = TSS_Execute(tssContext,
+			 (RESPONSE_PARAMETERS *)&startAuthSessionOut, 
+			 (COMMAND_PARAMETERS *)&startAuthSessionIn,
+			 (EXTRA_PARAMETERS *)&startAuthSessionExtra,
+			 TPM_CC_StartAuthSession,
+			 TPM_RH_NULL, NULL, 0);
+    }
+    if (rc == 0) {
+	*sessionHandle = startAuthSessionOut.sessionHandle;
+	if (verbose) printf("INFO: makeHmacSession: HMAC session handle %08x\n",
+			    startAuthSessionOut.sessionHandle);
+	if (vverbose) printf("makeHmacSession: TPM2_StartAuthSession success\n");
+    }
+    else {
+	const char *msg;
+	const char *submsg;
+	const char *num;
+	printf("ERROR: makeHmacSession: TPM2_StartAuthSession failed, rc %08x\n", rc);
 	TSS_ResponseCode_toString(&msg, &submsg, &num, rc);
 	printf("%s%s%s\n", msg, submsg, num);
 	rc = EXIT_FAILURE;
@@ -645,6 +696,96 @@ uint32_t signQuote(TSS_CONTEXT *tssContext,
     return rc;
 }
 
+/* getAuditDigest() signs an audit digest using the attestation keyHandle.
+
+   It returns the quote data and signature.
+
+*/
+
+uint32_t getAuditDigest(TSS_CONTEXT *tssContext,
+			TPM2B_ATTEST *auditInfo,		/* output */
+			TPMT_SIGNATURE *signature,		/* output */
+			TPM_HANDLE keyHandle,			/* attestation key */
+			TPMI_ALG_PUBLIC type,
+			TPMI_SH_AUTH_SESSION sessionHandle,	/* input audit session */
+			const unsigned char *nonceBin,		/* qualifyingData */
+			size_t nonceLen)
+{
+    TPM_RC			rc = 0;
+    GetSessionAuditDigest_In 	in;
+    GetSessionAuditDigest_Out	out;
+    
+    if (rc == 0) {
+	/* Handle of key that will perform quoting */
+	in.privacyAdminHandle = TPM_RH_ENDORSEMENT;
+	in.signHandle = keyHandle;
+	in.sessionHandle = sessionHandle;
+	/* data supplied by the caller */
+	/* FIXME should really come from AK public */
+	if (type == TPM_ALG_RSA) {
+	    /* Table 145 - Definition of TPMT_SIG_SCHEME Structure */
+	    in.inScheme.scheme = TPM_ALG_RSASSA;	
+	    /* Table 144 - Definition of TPMU_SIG_SCHEME Union <IN/OUT, S> */
+	    /* Table 142 - Definition of {RSA} Types for RSA Signature Schemes */
+	    /* Table 135 - Definition of TPMS_SCHEME_HASH Structure */
+	    in.inScheme.details.rsassa.hashAlg = TPM_ALG_SHA256;
+	}
+	else if (type == TPM_ALG_ECC) {
+	    in.inScheme.scheme = TPM_ALG_ECDSA;
+	    in.inScheme.details.ecdsa.hashAlg = TPM_ALG_SHA256;
+	}
+	else if (keyHandle != TPM_RH_NULL) {
+	    printf("ERROR: getAuditDigest: unsupported algorithm\n");
+	    rc = EXIT_FAILURE;
+	}
+    }
+    /* FIXME size check */
+    if (rc == 0) {
+	memcpy(in.qualifyingData.t.buffer, nonceBin, nonceLen);
+	in.qualifyingData.t.size = nonceLen;
+    }
+    /* call TSS to execute the command */
+    if (rc == 0) {
+	rc = TSS_Execute(tssContext,
+			 (RESPONSE_PARAMETERS *)&out,
+			 (COMMAND_PARAMETERS *)&in,
+			 NULL,
+			 TPM_CC_GetSessionAuditDigest,
+			 TPM_RS_PW, NULL, 0,	/* privacy admin */
+			 TPM_RS_PW, NULL, 0,	/* signing key */
+			 TPM_RH_NULL, NULL, 0);
+	if (rc == 0) {
+	}
+	else {
+	    const char *msg;
+	    const char *submsg;
+	    const char *num;
+	    printf("ERROR: getAuditDigest: failed, rc %08x\n", rc);
+	    TSS_ResponseCode_toString(&msg, &submsg, &num, rc);
+	    printf("%s%s%s\n", msg, submsg, num);
+	    rc = EXIT_FAILURE;
+	}
+    }
+    if (vverbose) {
+	TPMS_ATTEST tpmsAttest;
+	if (rc == 0) {
+	    printf("getAuditDigest:\n");
+	    uint8_t *tmpBuffer = out.auditInfo.t.attestationData;
+	    uint32_t tmpSize = out.auditInfo.t.size;
+	    rc = TSS_TPMS_ATTEST_Unmarshalu(&tpmsAttest, &tmpBuffer, &tmpSize);
+	}
+	if (rc == 0) {
+	    TSS_TPMS_ATTEST_Print(&tpmsAttest, 2);
+	}
+    }
+    /* return audit attestation and signature */
+    if (rc == 0) {
+	*auditInfo = out.auditInfo;
+	*signature = out.signature;
+    }
+    return rc;
+}
+
 /* readPcrs() reads all the TPM PCRs.  It reads one PCR at a time.
 
    It reads the banks specified by pcrSelection, but ignores the bit mask and reads all PCRs.
@@ -728,6 +869,127 @@ uint32_t readPcrs(TSS_CONTEXT *tssContext,
 		printf("%s%s%s\n", msg, submsg, num);
 		rc = EXIT_FAILURE;
 	    }
+	}
+    }
+    return rc;
+}
+
+/* readPcrsA() reads TPM PCRs in an audit session.  It reads one PCR at a time.
+
+   It reads the banks specified by pcrSelection, but ignores the bit mask and reads all PCRs.
+
+   Banks nor ead have the size set to 0.
+*/
+
+uint32_t readPcrsA(TSS_CONTEXT *tssContext,
+		   TPML_PCR_BANKS *outPcrBanks,			/* output PCR array */
+		   TPMI_SH_AUTH_SESSION sessionHandle,		/* input audit session */
+		   const TPML_PCR_SELECTION *inPcrSelection)	/* input PCR selection */
+{
+    TPM_RC			rc = 0;
+    PCR_Read_In 		in;
+    PCR_Read_Out 		out;
+    uint32_t			pcrBank = 0;	/* PCR bank being output, different from bank */
+    uint32_t			bank = 0;	/* iterate through PCR banks in pcrSelection */
+    uint8_t 			selectByte;	/* iterate through all bytes of PCR select */
+    uint8_t 			selectBit = 0;	/* iterate through bit map within a byte */
+    uint32_t			pcrNum = 0;	/* iterate through PCRs */
+
+    outPcrBanks->count = 0;	/* count of banks with at least one PCR selected */
+    in.pcrSelectionIn.count = 1;	/* do one bank at a time */
+
+    /* iterate through each bank */
+    for (bank = 0 ; (rc == 0) && (bank < inPcrSelection->count) ; bank++) {
+	int foundPCR = FALSE;	/* a PCR is selected in this bank */
+	in.pcrSelectionIn.pcrSelections[0].sizeofSelect = 
+	    inPcrSelection->pcrSelections[bank].sizeofSelect;	/* should be 3 */
+	in.pcrSelectionIn.pcrSelections[0].hash =
+	    inPcrSelection->pcrSelections[bank].hash;
+	outPcrBanks->pcrBank[pcrBank].hash = inPcrSelection->pcrSelections[bank].hash;
+	
+	/* iterate through each select byte */
+	for (selectByte = 0, pcrNum = 0 ; selectByte < (IMPLEMENTATION_PCR/8) ; selectByte++) {
+
+	    /* iterate through each bit in the byte */
+	    for (selectBit = 0 ; selectBit < 8 ; selectBit++, pcrNum++) {
+
+		/* if the PCR is selcted in the input pcrSelection */
+		if (inPcrSelection->pcrSelections[bank].pcrSelect[selectByte]  & (1<<selectBit)) {
+
+		    foundPCR = TRUE;	/* flag that a PCR was found */
+		    in.pcrSelectionIn.pcrSelections[0].pcrSelect[0] = 0;
+		    in.pcrSelectionIn.pcrSelections[0].pcrSelect[1] = 0;
+		    in.pcrSelectionIn.pcrSelections[0].pcrSelect[2] = 0;
+		    in.pcrSelectionIn.pcrSelections[0].pcrSelect[selectByte] = 1 << selectBit;
+		    /* call TSS to execute the command */
+		    if (rc == 0) {
+			rc = TSS_Execute(tssContext,
+					 (RESPONSE_PARAMETERS *)&out,
+					 (COMMAND_PARAMETERS *)&in,
+					 NULL,
+					 TPM_CC_PCR_Read,
+					 sessionHandle, NULL,
+					 TPMA_SESSION_AUDIT | TPMA_SESSION_CONTINUESESSION,
+					 TPM_RH_NULL, NULL, 0);
+		    }
+		    /* copy the read PCR value */
+		    if (rc == 0) {
+			outPcrBanks->pcrBank[pcrBank].pcrUpdateCounter[pcrNum] =
+			    out.pcrUpdateCounter;
+			if (inPcrSelection->pcrSelections[0].hash == TPM_ALG_SHA256) {
+			    outPcrBanks->pcrBank[pcrBank].digests[pcrNum].t.size =
+				SHA256_DIGEST_SIZE;
+			    memcpy(outPcrBanks->pcrBank[pcrBank].digests[pcrNum].t.buffer,
+				   out.pcrValues.digests[0].t.buffer,
+				   SHA256_DIGEST_SIZE);
+			}
+			else if (inPcrSelection->pcrSelections[0].hash == TPM_ALG_SHA1) {
+			    outPcrBanks->pcrBank[pcrBank].digests[pcrNum].t.size =
+				SHA1_DIGEST_SIZE;
+			    memcpy(outPcrBanks->pcrBank[pcrBank].digests[pcrNum].t.buffer,
+				   out.pcrValues.digests[0].t.buffer,
+				   SHA1_DIGEST_SIZE);
+			}
+			else {
+			    printf("ERROR: readPcrsA: does not support algorithm %04x yet\n",
+				   inPcrSelection->pcrSelections[bank].hash);
+			    rc = EXIT_FAILURE;
+			}
+		    }
+		    else {
+			const char *msg;
+			const char *submsg;
+			const char *num;
+			printf("ERROR: readPcrsA: failed, rc %08x\n", rc);
+			TSS_ResponseCode_toString(&msg, &submsg, &num, rc);
+			printf("%s%s%s\n", msg, submsg, num);
+			rc = EXIT_FAILURE;
+		    }
+		    /* if tracing is on, trace the session audit digest after each PCR read */
+		    if (vverbose) {
+			TPM2B_ATTEST auditInfo;
+			TPMT_SIGNATURE signature;
+			if (rc == 0) {
+			    rc = getAuditDigest(tssContext,
+						&auditInfo,
+						&signature,
+						TPM_RH_NULL,	/* no signature needed */
+						TPM_ALG_RSA,	/* not used */
+						sessionHandle,
+						NULL,		/* nonce */
+						0);		/* nonce length */
+			}
+		    }	     
+		}
+		else {	/* if PCR not selected, mark the PCR response empty */
+		    outPcrBanks->pcrBank[pcrBank].digests[pcrNum].t.size = 0;
+		}
+		outPcrBanks->pcrBank[pcrBank].count++;	/* record that another PCR was read */
+	    }
+	}
+	if (foundPCR) {
+	    outPcrBanks->count++;	/* record that at least one PCR was read in this bank */
+	    pcrBank++;			/* prepare for the next output bank */
 	}
     }
     return rc;
