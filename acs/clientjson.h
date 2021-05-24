@@ -3,7 +3,7 @@
 /*		TPM 2.0 Attestation - Client JSON Handler			*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: clientjson.h 1607 2020-04-28 21:35:05Z kgoldman $		*/
+/*            $Id: clientjson.h 1655 2021-01-15 14:44:59Z kgoldman $		*/
 /*										*/
 /* (c) Copyright IBM Corporation 2016 - 2020					*/
 /*										*/
@@ -70,6 +70,10 @@ uint32_t JS_Cmd_NewImaEntry(json_object **command,
 			    const char *nonceString,
 			    const char *imaEntryString);
 void JS_Cmd_AddHostname(json_object *command, const char *machineName);
+uint32_t JS_Cmd_AddEvent0(json_object *command,
+			  unsigned int lineNum,
+			  TCG_PCR_EVENT *event);
+
 uint32_t JS_Cmd_AddEvent(json_object *command,
 			 unsigned int lineNum,
 			 TCG_PCR_EVENT2 *event2);

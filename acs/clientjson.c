@@ -3,7 +3,7 @@
 /*		TPM 2.0 Attestation - Client JSON Handler			*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: clientjson.c 1607 2020-04-28 21:35:05Z kgoldman $		*/
+/*            $Id: clientjson.c 1655 2021-01-15 14:44:59Z kgoldman $		*/
 /*										*/
 /* (c) Copyright IBM Corporation 2016 - 2020					*/
 /*										*/
@@ -184,6 +184,36 @@ uint32_t JS_Rsp_Quote(json_object *responseObj)
 	    rc = 1;
 	}
     }
+    return rc;
+}
+
+/* JS_Cmd_AddEvent0() adds a BIOS event to the command json.
+
+   The event is the TCG_PCR_EVENT structure, the frst event in the TPM 2.0 event log.
+   'lineNum' is the event number, a line (row) in the event log.
+
+   "eventn":"hexascii event",
+
+*/
+
+uint32_t JS_Cmd_AddEvent0(json_object *command,
+			  unsigned int lineNum,
+			  TCG_PCR_EVENT *event)
+{
+    uint32_t rc = 0;
+    char *eventString = NULL;
+    char jsonKey[5+8+1];
+
+    if (rc == 0) {
+	rc = Structure_Print(&eventString,	/* freed @1 */
+			     event,
+			     (MarshalFunction_t)TSS_EVENT_Line_Marshal);
+    }
+    if (rc == 0) {
+	sprintf(jsonKey, "event%u", lineNum);
+	json_object_object_add(command, jsonKey, json_object_new_string(eventString));
+    }
+    free(eventString);	/* @1 */
     return rc;
 }
 

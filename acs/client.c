@@ -3,7 +3,7 @@
 /*		TPM 2.0 Attestation - Client    				*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: client.c 1607 2020-04-28 21:35:05Z kgoldman $		*/
+/*            $Id: client.c 1655 2021-01-15 14:44:59Z kgoldman $		*/
 /*										*/
 /* (c) Copyright IBM Corporation 2016 - 2020.					*/
 /*										*/
@@ -113,10 +113,12 @@ static uint32_t createQuote(json_object **quoteResponseJson,
 static uint32_t addBiosEntry(json_object *command,
 			     const char *biosInputFilename,
 			     const char *biosEntryString);
+#ifndef TPM_ACS_NOIMA
 static uint32_t addImaEntry(json_object *command,
 			    const char *imaInputFilename,
 			    int		littleEndian,
 			    const char *imaEntryString);
+#endif
 
 int vverbose = 0;
 int verbose = 0;
@@ -132,19 +134,17 @@ int main(int argc, char *argv[])
 {
     int rc = 0;
     int	i;    		/* argc iterator */
-    
+
     /* command line argument defaults */
     const char *boottimeFileName = NULL;
     char boottimeString[128];
     const char *biosInputFilename = NULL;
-    
+
 #if defined(TPM_ACS_PVM_REMOTE) || defined(TPM_ACS_PVM_INBAND)
     char  logfilename[100];
 #endif
-#ifndef TPM_ACS_NOIMA
     const char *imaInputFilename = NULL;
     int 	littleEndian = TRUE;
-#endif
     const char *hostname = "localhost";		/* default server */
     const char 	*portString = NULL;		/* server port */
     short port = 2323;				/* default server */
@@ -266,7 +266,7 @@ int main(int argc, char *argv[])
 	    }
 	}
 	else if (strcmp(argv[i],"-be") == 0) {
-	    littleEndian = FALSE; 
+	    littleEndian = FALSE;
 	}
 #endif
 	else if (strcmp(argv[i],"-co") == 0) {
@@ -305,7 +305,7 @@ int main(int argc, char *argv[])
 		printUsage();
 	    }
 	}
-#endif        
+#endif
 	else if (strcmp(argv[i],"-p") == 0) {
 	    i++;
 	    if (i < argc) {
@@ -336,7 +336,7 @@ int main(int argc, char *argv[])
     rc = makeAkFilenames(akpubFullName,
 			 akprivFullName,
 			 sizeof(akprivFullName),
-			 akpubFilename,			 
+			 akpubFilename,
 			 akprivFilename,
 			 machineName);
     if (rc != 0) {
@@ -431,7 +431,7 @@ int main(int argc, char *argv[])
 	const char *pcrSelectString;
 	const char *biosEntryString = "0";
 	const char *imaEntryString = "0";
-	
+
 	/* get the quote nonce and pcr selection from the response */
 	if (!connectionOnly && !quoteOnly && !optionalDemoOnly) {
 	    nonceStart = time(NULL);
@@ -454,7 +454,7 @@ int main(int argc, char *argv[])
 	if ((rc == 0) && badQuote) {
 	    /* induce a quote failure by flipping a nonce bit.  Use an LSB so it remains
 	       printable */
-	    ((char *)(nonceString))[0] ^= 0x01;		
+	    ((char *)(nonceString))[0] ^= 0x01;
 	}
 	/* for debug, if nonce only, save the nonce and PCR select for subsequent testing */
 	if ((rc == 0) && nonceOnly) {
@@ -490,7 +490,7 @@ int main(int argc, char *argv[])
 			     imaInputFilename, littleEndian, imaEntryString);
 	}
 	quoteEnd = time(NULL);
-	
+
 	if ((rc == 0) && connectionOnly) {
 	    int sock_fd = -1;		/* error value, for close noop */
 	    if (rc == 0) {
@@ -590,7 +590,7 @@ static uint32_t loadNonce(char **nonceStringSaved,
    }
 
    The server response is of the form:
-   
+
    {
    "response":"nonce",
    "nonce":"5ef7c0cf2bc1909d27d1acf793a5fd252be7bd29aca6ea191a4f40a60f814b00",
@@ -599,7 +599,7 @@ static uint32_t loadNonce(char **nonceStringSaved,
    "imaentry":"0"
 
    or
-   
+
    "biosentry":"-1",
    "imaentry":"n"	or incremental
    }
@@ -617,7 +617,7 @@ static uint32_t getNonce(json_object **nonceResponseJson,	/* freed by caller */
     uint8_t 	*cmdBuffer = NULL;
     uint32_t 	rspLength;
     uint8_t 	*rspBuffer = NULL;
-    
+
     if (verbose) printf("INFO: getNonce\n");
     /* return the boot time for the command packet.  This is done at the 'local' layer because
        the upper layer may not have access to the clock. */
@@ -700,7 +700,7 @@ static uint32_t parseNonceResponse(const char **nonceString,
     return rc;
 }
 
-/* createQuote() runs a TPM quote, and sends the quote command to the server.  
+/* createQuote() runs a TPM quote, and sends the quote command to the server.
 
    "command":"quote",
    "hostname":"cainl.watson.ibm.com",
@@ -792,7 +792,7 @@ static uint32_t createQuote(json_object **quoteResponseJson,	/* freed by caller 
     */
     json_object *command = NULL;
     if (rc == 0) {
-	rc = JS_Cmd_NewQuote(&command,			/* freed FIXME */
+	rc = JS_Cmd_NewQuote(&command,			/* freed @1 */
 			     machineName,
 			     quotedString,
 			     signatureString);
@@ -801,10 +801,12 @@ static uint32_t createQuote(json_object **quoteResponseJson,	/* freed by caller 
     if (rc == 0) {
 	rc = addBiosEntry(command, biosInputFilename, biosEntryString);
     }
+#ifndef TPM_ACS_NOIMA
     /* adds the IMA events from the event log file 'imaInputFilename' */
     if (rc == 0) {
 	rc = addImaEntry(command, imaInputFilename, littleEndian, imaEntryString);
     }
+#endif
     uint32_t cmdLength;
     uint8_t *cmdBuffer = NULL;
     uint32_t rspLength;
@@ -848,18 +850,18 @@ static uint32_t createQuote(json_object **quoteResponseJson,	/* freed by caller 
 
    "event1":"hexascii",
 */
-   
+
 static uint32_t addBiosEntry(json_object *command,
 			     const char *biosInputFilename,
 			     const char *biosEntryString)
 {
     uint32_t 	rc = 0;
-    
+
     if (vverbose) printf("addBiosEntry: Entry\n");
     int biosEntry;	/* response as an integer */
     if (rc == 0) {
 	sscanf(biosEntryString, "%u", &biosEntry);
-    }    
+    }
     if (rc == 0) {
 	if (biosEntry >= 0) {
 	    if (vverbose) printf("addBiosEntry: start with biosEntry %d\n", biosEntry);
@@ -909,6 +911,12 @@ static uint32_t addBiosEntry(json_object *command,
 	if (verbose && !endOfFile && (rc == 0)) {
 	    if (vverbose) TSS_SpecIdEvent_Trace(&specIdEvent);
 	}
+	/* serialize the event into the json command */
+	if (!endOfFile && (rc == 0)) {
+	    rc = JS_Cmd_AddEvent0(command,
+				  0,
+				  &event);
+	}
 	/* scan each measurement 'line' in the binary */
 	unsigned int 		lineNum;	/* FIXME no incremental log yet */
 	for (lineNum = 1 ; !endOfFile && (rc == 0) ; lineNum++) {
@@ -920,12 +928,6 @@ static uint32_t addBiosEntry(json_object *command,
 	    if (vverbose && !endOfFile && (rc == 0)) {
 		printf("addBiosEntry: line %u\n", lineNum);
 		TSS_EVENT2_Line_Trace(&event2);
-	    }
-	    /* don't send no action events */
-	    if (!endOfFile && (rc == 0)) {
-		if (event2.eventType == EV_NO_ACTION) {
-		    continue;
-		}
 	    }
 	    /* serialize the event into the json command */
 	    if (!endOfFile && (rc == 0)) {
@@ -947,7 +949,8 @@ static uint32_t addBiosEntry(json_object *command,
 
    "imaevent1":"0000000aa97937766682b65c10a07c5c50363745f8e08b2700000007696d612d7369670000003a280000007368613235363a00078a025f29541d6c5f3d4232c9028d88b606a962114ed5471f091d9cc85acadb060000002f696e69740000000000",
 */
-   
+ 
+#ifndef TPM_ACS_NOIMA
 static uint32_t addImaEntry(json_object *command,
 			    const char *imaInputFilename,
 			    int		littleEndian,
@@ -959,7 +962,7 @@ static uint32_t addImaEntry(json_object *command,
     int imaEntry;	/* response as an integer */
     if (rc == 0) {
 	sscanf(imaEntryString, "%u", &imaEntry);
-    }    
+    }
     if (rc == 0) {
 	if (imaEntry >= 0) {
 	    if (vverbose) printf("addImaEntry: start with imaEntry %d\n", imaEntry);
@@ -1004,7 +1007,7 @@ static uint32_t addImaEntry(json_object *command,
 					 event);
 		    rc = ACE_FILE_READ;
 		}
-	    }	
+	    }
 	}
 #if 0
 	/* if not end of file, have more measurements to send */
@@ -1031,7 +1034,7 @@ static uint32_t addImaEntry(json_object *command,
 		/* serialize and add this IMA event to the json command */
 		if (vverbose) printf("addImaEntry: add entry %u\n", event);
 		rc = JS_Cmd_AddImaEvent(command,
-					&imaEvent,				     
+					&imaEvent,
 					event);
 	    }
 	    IMA_Event_Free(&imaEvent);
@@ -1042,6 +1045,7 @@ static uint32_t addImaEntry(json_object *command,
     }		/* imaInputFilename not NULL */
     return rc;
 }
+#endif
 
 
 static void printUsage(void)
@@ -1094,7 +1098,6 @@ static void printUsage(void)
     printf("[-v verbose trace]\n");
     printf("[-vv very verbose trace]\n");
     printf("\n");
-    exit(1);	
+    exit(1);
 }
 
- 
