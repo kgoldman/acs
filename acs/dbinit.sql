@@ -129,7 +129,7 @@ create table attestlog
 	imaevents int unsigned,
 	imaver bool,
 	imasigver bool,
-	badimalog bool  
+	badimalog bool
 );
 
 create table imalog
@@ -141,9 +141,9 @@ create table imalog
 	entrynum int unsigned,
 	ima_entry varbinary(1024),
 	filename varchar(1024),
-	badevent bool,  
-	nosig bool,     
-	nokey bool,    
+	badevent bool,
+	nosig bool,
+	nokey bool,
 	badsig bool
 );
 

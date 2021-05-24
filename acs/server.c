@@ -3,7 +3,7 @@
 /*			TPM 2.0 Attestation - Server 				*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: server.c 1630 2020-06-04 18:37:01Z kgoldman $		*/
+/*            $Id: server.c 1669 2021-05-21 22:19:52Z kgoldman $		*/
 /*										*/
 /* (c) Copyright IBM Corporation 2015 - 2020					*/
 /*										*/
@@ -86,6 +86,9 @@
 #include "cryptoutils.h"
 #include "ekutils.h"
 
+#ifdef ACS_BLOCKCHAIN
+#include "serverbc.h"
+#endif
 
 /* local function prototypes */
 
@@ -163,11 +166,14 @@ static uint32_t processQuoteResults(json_object 	*cmdJson,
 				    unsigned int 	quoteVerified,
 				    const char 		*attestLogId,
 				    MYSQL 		*mysql);
-static uint32_t processLogResults(unsigned int 	logVerified,
-				  unsigned int 	eventNum,
-				  unsigned int 	nextImaEventNum,
-				  const char 	*attestLogId,
-				  MYSQL 	*mysql);
+uint32_t processBiosLogResults(unsigned int 	logVerified,
+			       unsigned int 	eventNum,
+			       const char 	*attestLogId,
+			       MYSQL 		*mysql);
+uint32_t processImaLogResults(unsigned int 	logVerified,
+			      unsigned int 	nextImaEventNum,
+			      const char 	*attestLogId,
+			      MYSQL 		*mysql);
 static unsigned updateImaState(unsigned int 	nextImaEventNum,
 			       char		*imaPcrString,
 			       const char 	*machineId,
@@ -220,6 +226,17 @@ static uint32_t generateCredentialBlob(char **credentialBlobString,
 static uint32_t processEnrollCert(unsigned char **rspBuffer,
 				  uint32_t *rspLength,
 				  json_object *cmdJson);
+#ifdef ACS_UNSEAL
+static uint32_t processUnsealAuth(unsigned char **rspBuffer,
+				  uint32_t *rspLength,
+				  json_object *cmdJson);
+static uint32_t pcrStringToBin(unsigned char **pcrsSha1Bin,
+			       size_t *pcrsSha1BinSize,
+			       unsigned char **pcrsSha256Bin,
+			       size_t *pcrsSha256BinSize,
+			       const char *pcrsSha1String[],
+			       const char *pcrsSha256String[]);
+#endif
 static uint32_t makecredential(TSS_CONTEXT *tssContext,
 			       TPM2B_ID_OBJECT *credentialBlob,
 			       TPM2B_ENCRYPTED_SECRET *secret,
@@ -461,7 +478,7 @@ int main(int argc, char *argv[])
 	}
 	/* only fatal server errors should abort the server */
 	if (!((rc >= ASE_ERROR_FIRST) && (rc <= ASE_ERROR_LAST))) {
-	    rc = 0;	/* client errors shoild not */
+	    rc = 0;	/* client errors should not */
 	}
 	Socket_Disconnect(&connection_fd);
 	free(cmdBuffer);			/* @1 */
@@ -550,6 +567,15 @@ static uint32_t processRequest(unsigned char **rspBuffer,	/* freed by caller */
 				   rspLength,
 				   cmdJson);
 	}
+#ifdef ACS_UNSEAL
+	/* unseal authorization */
+	else if (strcmp(commandString, "unsealauth") == 0) {
+	    if (vverbose) printf("processRequest: processing unsealauth\n");
+	    rc = processUnsealAuth(rspBuffer,		/* freed by caller */
+				   rspLength,
+				   cmdJson);
+	} 
+#endif
 	/* if the client sent an unknown command, send this response These is a client errors that
 	   should not abort the server.*/
 	else {
@@ -630,7 +656,7 @@ static uint32_t processSendError(unsigned char **rspBuffer,	/* freed by caller *
 
    ~~
 
-   It upates the machine DB entry with the boottime, zero IMA events, and the initial all zero IMA
+   It updates the machine DB entry with the boottime, zero IMA events, and the initial all zero IMA
    PCR.
    
    It creates an attestlog DB entry for this client attestation, with:
@@ -927,7 +953,7 @@ static uint32_t processNonce(unsigned char **rspBuffer,		/* freed by caller */
    - the BIOS events and IMA event processed
    - reconstructed PCRs
    - validation of the PCR white list
-   - whether the BIOS PCRs changed since the last atesation
+   - whether the BIOS PCRs changed since the last attestation
 
    Updates the machines DB with
 
@@ -959,7 +985,7 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
     size_t 		signatureBinSize;
     
     /* status flags */
-    unsigned int 	quoteVerified = FALSE;	/* TRUE if quote signature verified AND nonce
+    unsigned int 	quoteVerified = TRUE;	/* TRUE if quote signature verified AND nonce
 						   matches */
     unsigned int 	logVerified = FALSE;	/* PCR digest matches event logs */
 
@@ -1081,15 +1107,71 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
 	   that the nonce has not been used.  After a quote, quoteverified is set true or false,
 	   indicating that the nonce has been used. */
 	else if (quoteVerifiedString != NULL) {
-	    printf("ERROR: processQuote: nonce for hostname %s already used\n", hostname);  
-	    rc = ACE_NONCE_USED;
+	    char 	query[QUERY_LENGTH_MAX];
+	    quoteVerified = FALSE;	/* quote nonce */
+	    printf("ERROR: processQuote: nonce for hostname %s already used\n", hostname);
+	    /* since no attestlog entry was created during the nonce stage, create it here */
+	    if (rc == 0) {
+		int irc = snprintf(query, QUERY_LENGTH_MAX,
+				   "insert into attestlog "
+				   "(userid, hostname, timestamp, nonce, pcrselect, boottime) "
+				   "values ('%s','%s','%s','%s','%s','%s')",
+				   "unknown", hostname, "0000-00-00 00:00:00", "",
+				   "", "0000-00-00 00:00:00");
+		if (irc >= QUERY_LENGTH_MAX) {
+		    printf("ERROR: processQuote: SQL query overflow\n");
+		    rc = ASE_SQL_ERROR;
+		}
+	    }
+	    if (rc == 0) {
+		rc = SQ_Query(NULL, mysql, query);
+	    }
+	    /* Since the previous entry is not a new nonce, that attestlog entry should not be
+	       reused.  Free the previous attestLogId attestLogResult.  A new entry will now be
+	       created */
+	    free(attestLogId);			/* @6 */
+	    SQ_FreeResult(attestLogResult);	/* @7 */
+	    attestLogId = NULL;
+	    attestLogResult = NULL;
+	    if (rc == 0) {
+		rc = SQ_GetAttestLogEntry(&attestLogId, 	/* freed @6 */
+					  NULL,			/* boottime */
+					  NULL,			/* timestamp */
+					  NULL,			/* nonce */
+					  NULL,			/* pcrselect */
+					  NULL,			/* quote */
+					  NULL,			/* quoteverified */
+					  NULL,			/* logverified */
+					  &attestLogResult,	/* freed @7 */
+					  mysql,
+					  hostname);
+	    }
+	    /* since the next attestation should be a full log, not incremental, reset the boot time
+	       in the machines DB */
+	    if (rc == 0) {
+		int irc = snprintf(query, QUERY_LENGTH_MAX,
+				   "update machines set boottime = '%s', "
+				   "imaevents = '%u', imapcr = '%s' "
+				   "where id = '%s'",
+				   "0000-00-00 00:00:00",
+				   0,
+				   "0000000000000000000000000000000000000000000000000000000000000000",
+				   machineId);
+		if (irc >= QUERY_LENGTH_MAX) {
+		    printf("ERROR: processQuote: SQL query overflow\n");
+		    rc = ASE_SQL_ERROR;
+		}
+	    }
+	    if (rc == 0) {
+		rc = SQ_Query(NULL, mysql, query);
+	    }
 	}
 	else {
 	    if (verbose) printf("INFO: processQuote: found attestlog DB entry for %s\n", hostname);  
 	}
     }
     /* Validate the quote signature */
-    if (rc == 0) {
+    if ((rc == 0) && quoteVerified) {
 	rc = verifyQuoteSignature(&quoteVerified,	/* result */
 				  quotedBin,		/* message */
 				  quotedBinSize,	/* message size */
@@ -1098,7 +1180,7 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
     }
     /* unmarshal the TPM2B_ATTEST quoted structure */
     TPMS_ATTEST tpmsAttest;
-    if (rc == 0) {
+    if ((rc == 0) && quoteVerified) {
 	tmpptr = quotedBin;		/* so actual pointers don't move */
 	tmpsize= quotedBinSize;
 	rc = TSS_TPMS_ATTEST_Unmarshalu(&tpmsAttest, &tmpptr, &tmpsize);
@@ -1107,7 +1189,7 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
 	}
     }
     /* validate that the nonce / extraData in the quoted is what was supplied to the client */
-    if (rc == 0) {
+    if ((rc == 0) && quoteVerified) {
 	rc = verifyQuoteNonce(&quoteVerified,		/* boolean result */
 			      nonceServerString,	/* server */
 			      &tpmsAttest);		/* client */
@@ -1119,7 +1201,7 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
     /* get the previous PCRs from the attestlog, may be all zeros */
     const char *previousPcrsString[IMPLEMENTATION_PCR];   /* from quote, from database */
     MYSQL_RES  *attestLogPcrResult = NULL;
-    if (rc == 0) {
+    if ((rc == 0) && quoteVerified) {
 	if (verbose) printf("INFO: processQuote: Retrieve previous PCRs\n");
 	rc = SQ_GetAttestLogPCRs(NULL,
 				 previousPcrsString,
@@ -1134,7 +1216,7 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
     uint8_t 		*quotePcrsSha256Bin[IMPLEMENTATION_PCR];
     for (pcrNum = 0 ; pcrNum < IMPLEMENTATION_PCR ; pcrNum++) {
 	quotePcrsSha256Bin[pcrNum] = NULL;			/* for free, in case of error */
-     }
+    }
     if ((rc == 0) && quoteVerified) {
 	if (verbose) printf("INFO: processQuote: Process BIOS entries, pass 1\n");
 	rc = processBiosEntries20Pass1(&eventNum,		/* events processed */
@@ -1156,17 +1238,27 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
 				      &tpmsAttest,
 				      cmdJson);
     }
-    if ((rc == 0) && logVerified) {
-	if (vverbose) printf("processQuote: After processImaEntries first %u - next %u\n",
-			     firstImaEventNum, nextImaEventNum);
+    if ((rc == 0) && quoteVerified) {
+	if (logVerified) {
+	    if (vverbose) printf("processQuote: After processImaEntries first %u - next %u\n",
+				 firstImaEventNum, nextImaEventNum);
+	}
+	else {
+	    if (verbose) printf("ERROR: processQuote: Event logs do not match quote\n");
+	}
     }
     /* update the attestdb with the boolean log verified result if at least one new IMA entry was
        processed */
-    if ((rc == 0) && (firstImaEventNum < nextImaEventNum)) {
-	rc = processLogResults(logVerified, eventNum,
-			       nextImaEventNum,		/* next IMA event number to be processed */
-			       attestLogId, mysql);
-    }    
+    if ((rc == 0) && quoteVerified && (eventNum > 0)) {
+	rc = processBiosLogResults(logVerified,
+				   eventNum,		/* BIOS events processed */
+				   attestLogId, mysql);
+    }
+    if ((rc == 0) && quoteVerified && (firstImaEventNum < nextImaEventNum)) {
+	rc = processImaLogResults(logVerified,
+				  nextImaEventNum,		/* next IMA event number to be processed */
+				  attestLogId, mysql);
+    }
     /*
       Processing once the quote is verified completely
     */
@@ -1176,7 +1268,7 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
 	quotePcrsSha256String[pcrNum] = NULL;
     }
     /* convert the reconstructed PCRs from binary to string for the DB store */
-    if (rc == 0) {
+    if ((rc == 0) && quoteVerified) {
 	rc = pcrBinToString(quotePcrsSha256String,	/* freed @12 */
 			    TPM_ALG_SHA256,
 			    quotePcrsSha256Bin);
@@ -1188,7 +1280,7 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
 	    rc= updateImaState(nextImaEventNum,		/* next IMA event number to be processed */
 			       quotePcrsSha256String[TPM_IMA_PCR],
 			       machineId, mysql);
-	}    
+	}
 	/* add validated quote PCRs to attestlog DB */
 	if (rc == 0) {
 	    rc = processQuotePCRs(quotePcrsSha256String, attestLogId, mysql);
@@ -1218,7 +1310,7 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
 	}
     }
     /* store the IMA entries in the DB */
-    if (logVerified && (firstImaEventNum < nextImaEventNum)) {
+    if (logVerified && quoteVerified && (firstImaEventNum < nextImaEventNum)) {
 	int imasigver;
 	if (rc == 0) {
 	    if (verbose) printf("INFO: processQuote: "
@@ -1226,8 +1318,8 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
 				firstImaEventNum, nextImaEventNum);
 	    rc = processImaEntriesPass2(&imasigver,
 					hostname,		/* for DB row */
-					clientBootTime,	/* for DB row */
-					timestamp,	/* for DB row */
+					clientBootTime,		/* for DB row */
+					timestamp,		/* for DB row */
 					cmdJson,		/* client command */
 					firstImaEventNum,	/* first IMA event processed */
 					nextImaEventNum,	/* next IMA event number to be processed */
@@ -1241,6 +1333,14 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
     json_object *response = NULL;
     uint32_t rc1 = JS_ObjectNew(&response);		/* freed @9 */
     if (rc1 == 0) {
+	if (rc == 0) {
+	    if (!quoteVerified) {
+		rc = ACE_QUOTE_SIGNATURE;
+	    }
+	    else if (!logVerified) {
+		rc = ACE_EVENT;
+	    }
+	}
 	if (rc == 0) {
 	    json_object_object_add(response, "response", json_object_new_string("quote"));
 	}
@@ -1313,7 +1413,7 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
    - the BIOS events and IMA event processed
    - reconstructed PCRs
    - validation of the PCR white list
-   - whether the BIOS PCRs changed since the last atesation
+   - whether the BIOS PCRs changed since the last attestation
 
    Updates the machines DB with
 
@@ -1737,7 +1837,7 @@ static void getBiosPCRselect(uint8_t *sizeOfSelect,
     return;
 }
 
-/* pcrBinToString() converts a PCR frim binary to a hexascii string, with the length deterimed by
+/* pcrBinToString() converts a PCR from binary to a hexascii string, with the length determined by
    the hash algorithm */
 
 static uint32_t pcrBinToString(char *pcrsString[],	/* freed by caller */
@@ -1760,6 +1860,64 @@ static uint32_t pcrBinToString(char *pcrsString[],	/* freed by caller */
     return rc;
 }
 
+#ifdef ACS_UNSEAL
+
+/* pcrStringToBin() converts the PCRs as hexascii strings to binary.  Null strings set the binary to
+   0.
+
+   The strings typically come from either the database or json.
+*/
+
+static uint32_t pcrStringToBin(unsigned char **pcrsSha1Bin,	/* freed by the caller */
+			       size_t *pcrsSha1BinSize,
+			       unsigned char **pcrsSha256Bin, 	/* freed by the caller */
+			       size_t *pcrsSha256BinSize,
+			       const char *pcrsSha1String[],
+			       const char *pcrsSha256String[])
+{
+    uint32_t  		rc = 0;
+    /* NULL the pointers for the free */
+    uint32_t pcrNum;
+    for (pcrNum = 0 ; pcrNum < IMPLEMENTATION_PCR ; pcrNum++) {
+	pcrsSha1Bin[pcrNum] = NULL;
+	pcrsSha256Bin[pcrNum] = NULL;
+    }
+    /* get all PCRs from the strings */
+    for (pcrNum = 0 ; pcrNum < IMPLEMENTATION_PCR ; pcrNum++) {
+	/* text to binary */
+	if (pcrsSha1String[pcrNum] != NULL) {
+	    if (rc == 0) {
+		rc = Array_Scan(&pcrsSha1Bin[pcrNum],	/* output binary, freed by caller */
+				&pcrsSha1BinSize[pcrNum],
+				pcrsSha1String[pcrNum]);	/* input string */
+	    }
+	    if (rc == 0) {
+		if (pcrsSha1BinSize[pcrNum] != SHA1_DIGEST_SIZE) {
+		    printf("ERROR: pcrStringToBin: PCR %u size %lu not SHA-1\n",
+			   pcrNum, (unsigned long)pcrsSha1BinSize[pcrNum]);  
+		    rc = ACE_PCR_LENGTH;
+		}
+	    }
+	}
+	if (pcrsSha256String[pcrNum] != NULL) {
+	    if (rc == 0) {
+		rc = Array_Scan(&pcrsSha256Bin[pcrNum],	/* output binary, freed by the caller */
+				&pcrsSha256BinSize[pcrNum],
+				pcrsSha256String[pcrNum]);	/* input string */
+	    }
+	    if (rc == 0) {
+		if (pcrsSha256BinSize[pcrNum] != SHA256_DIGEST_SIZE) {
+		    printf("ERROR: pcrStringToBin: client PCR %u size %lu not SHA-256\n",
+			   pcrNum, (unsigned long)pcrsSha256BinSize[pcrNum]);  
+		    rc = ACE_PCR_LENGTH;
+		}
+	    }
+	}
+    }
+    return rc;
+}
+
+#endif	/* ACS_UNSEAL */
 
 
 /* makePcrStream20() concatenates the selected PCRs into a stream. pcrBinStream must be large enough
@@ -2124,24 +2282,29 @@ static uint32_t processBiosEntries20Pass1(unsigned int *eventNum,	/* events proc
 {
     uint32_t 		rc = 0;
     int			done = FALSE;
+    uint32_t 		bankNum;
     uint32_t		pcrNum;
-    TPMT_HA		biosPcrs[BIOS_LOG_ALGS][IMPLEMENTATION_PCR];
+    TPMT_HA		biosPcrs[HASH_COUNT][IMPLEMENTATION_PCR];
 
     if (verbose) printf("INFO: processBiosEntries20Pass1: First pass, calculating BIOS PCRs\n");
-    /* calculation starts with PCRs all zero */
+    /* calculation starts with PCRs all zero, handles two banks */
     for (pcrNum = 0 ; pcrNum < IMPLEMENTATION_PCR ; pcrNum++) {
 	biosPcrs[0][pcrNum].hashAlg = TPM_ALG_SHA256;
 	memset((uint8_t *)&biosPcrs[0][pcrNum].digest, 0, SHA256_DIGEST_SIZE);
 	biosPcrs[1][pcrNum].hashAlg = TPM_ALG_SHA1;
 	memset((uint8_t *)&biosPcrs[1][pcrNum].digest, 0, SHA1_DIGEST_SIZE);
     }
-    /* eventNum starts at 1 because event 0 is header information, EV_NO_ACTION */
-    for (*eventNum = 0 ; (rc == 0) && !done ; ) {
-	/* eventNum starts at 1 because event 0 is header information, EV_NO_ACTION */
-	(*eventNum)++;	
+    /* The rest of the banks have no algorithm.  In the future, this could be table driven rather
+       than hard coded to SHA-1 and SHA-256 */
+    for (bankNum = BIOS_LOG_ALGS ; bankNum < HASH_COUNT ; bankNum++) {
+	for (pcrNum = 0 ; pcrNum < IMPLEMENTATION_PCR ; pcrNum++) {
+	    biosPcrs[bankNum][pcrNum ].hashAlg = TPM_ALG_NULL;
+	}
+    }
+    for (*eventNum = 0 ; (rc == 0) && !done ; (*eventNum)++) {
 	/* get the next event */
 	char *eventString = NULL;
-	if (rc == 0) { 
+	if (rc == 0) {
 	    rc = JS_Cmd_GetEvent(&eventString,	/* freed @2 */
 				 *eventNum,
 				 cmdJson);
@@ -2153,8 +2316,8 @@ static uint32_t processBiosEntries20Pass1(unsigned int *eventNum,	/* events proc
 	    } 
 	}
 	/* convert the event from a string to binary */
-	unsigned char *eventBin = NULL;
-	size_t eventLength;
+	unsigned char 	*eventBin = NULL;
+	size_t 		eventLength;
 	if ((rc == 0) && !done) {
 	    rc = Array_Scan(&eventBin,		/* freed @1 */
 			    &eventLength,
@@ -2163,48 +2326,64 @@ static uint32_t processBiosEntries20Pass1(unsigned int *eventNum,	/* events proc
 		printf("ERROR: processBiosEntries20Pass1: error scanning event %u\n", *eventNum);
 	    }
 	}
-	TCG_PCR_EVENT2 event2;	/* TPM 2.0 hash agile event log entry */
-	/* unmarshal the event from binary to structure */
-	if ((rc == 0) && !done) {
-	    if (vverbose) printf("processBiosEntries20Pass1: unmarshaling event %u\n", *eventNum);
-	    unsigned char *eventBinPtr = eventBin;	/* ptr that moves */
-	    uint32_t eventLengthPtr = eventLength;
-	    memset(event2.event, 0, sizeof(event2.event));	/* initialize to NUL terminated */
-	    rc = TSS_EVENT2_Line_Unmarshal(&event2, &eventBinPtr, &eventLengthPtr);
-	    if (rc != 0) {
-		printf("ERROR: processBiosEntries20Pass1: error unmarshaling event %u\n", *eventNum);
+	if (*eventNum == 0) {
+	    TCG_PCR_EVENT event;	/* TPM 1.2 agile event log entry, first event */
+	    /* unmarshal the event from binary to structure */
+	    if ((rc == 0) && !done) {
+		if (vverbose) printf("processBiosEntries20Pass1: unmarshaling event %u\n",
+				     *eventNum);
+		unsigned char *eventBinPtr = eventBin;	/* ptr that moves */
+		uint32_t eventLengthPtr = eventLength;
+		memset(event.event, 0, sizeof(event.event));	/* initialize to NUL terminated */
+		rc = TSS_EVENT_Line_Unmarshal(&event, &eventBinPtr, &eventLengthPtr);
+		if (rc != 0) {
+		    printf("ERROR: processBiosEntries20Pass1: error unmarshaling event %u\n",
+			   *eventNum);
+		}
 	    }
 	}
-	/* the client should only send one hash algorithm */
-	if ((rc == 0) && !done) {
-	    if (event2.digests.count > BIOS_LOG_ALGS) {
-		printf("ERROR: processBiosEntries20Pass1: %u event log algorithms\n", *eventNum);
-		rc = ACE_BAD_ALGORITHM;
+	else {
+	    TCG_PCR_EVENT2 event2;	/* TPM 2.0 hash agile event log entry */
+	    /* unmarshal the event from binary to structure */
+	    if ((rc == 0) && !done) {
+		if (vverbose) printf("processBiosEntries20Pass1: unmarshaling event %u\n",
+				     *eventNum);
+		unsigned char *eventBinPtr = eventBin;	/* ptr that moves */
+		uint32_t eventLengthPtr = eventLength;
+		memset(event2.event, 0, sizeof(event2.event));	/* initialize to NUL terminated */
+		rc = TSS_EVENT2_Line_Unmarshal(&event2, &eventBinPtr, &eventLengthPtr);
+		if (rc != 0) {
+		    printf("ERROR: processBiosEntries20Pass1: error unmarshaling event %u\n",
+			   *eventNum);
+		}
 	    }
-	}
-	/* range check the untrusted client BIOS event log */
-	if ((rc == 0) && !done) {
-	    if (event2.pcrIndex > IMPLEMENTATION_PCR) {
-		printf("ERROR: processBiosEntries20Pass1: PCR number %u out of range\n",
-		       event2.pcrIndex);
-		rc = ACE_PCR_INDEX;
+	    /* the client should only send one hash algorithm */
+	    if ((rc == 0) && !done) {
+		if (event2.digests.count > BIOS_LOG_ALGS) {
+		    printf("ERROR: processBiosEntries20Pass1: %u event log algorithms\n",
+			   *eventNum);
+		    rc = ACE_BAD_ALGORITHM;
+		}
 	    }
-	}
-	/* extend recalculated PCRs based on this event.  This function also does the PCR range
-	   check. */
-	if ((rc == 0) && !done) {
-	    if (vverbose) printf("processBiosEntries20Pass1: Processing event %u PCR %u\n",
-				 *eventNum, event2.pcrIndex);
-	    rc = TSS_EVENT2_PCR_Extend(biosPcrs, &event2);
-	    if (rc != 0) {
-		printf("ERROR: processBiosEntries20Pass1: error extending event %u\n", *eventNum);
-		rc = ACE_EVENT;
+	    /* extend recalculated PCRs based on this event.  This function also does the PCR range
+	       check. */
+	    if ((rc == 0) && !done) {
+		if (vverbose) printf("processBiosEntries20Pass1: Processing event %u PCR %u\n",
+				     *eventNum, event2.pcrIndex);
+		rc = TSS_EVENT2_PCR_Extend(biosPcrs, &event2);
+		if (rc != 0) {
+		    printf("ERROR: processBiosEntries20Pass1: error extending event %u\n",
+			   *eventNum);
+		    rc = ACE_EVENT;
+		}
 	    }
-	}
-	if ((rc == 0) && !done) {
-	    if (vverbose) Array_Print(NULL, "processBiosEntries20Pass1: PCR digest", TRUE,
-				      (uint8_t *)&biosPcrs[0][event2.pcrIndex].digest,
-				      SHA256_DIGEST_SIZE);
+	    if ((rc == 0) && !done) {
+		if (event2.pcrIndex < IMPLEMENTATION_PCR) {
+		    if (vverbose) Array_Print(NULL, "processBiosEntries20Pass1: PCR digest", TRUE,
+					      (uint8_t *)&biosPcrs[0][event2.pcrIndex].digest,
+					      SHA256_DIGEST_SIZE);
+		}
+	    }
 	}
 	free(eventBin);			/* @1 */
 	eventBin = NULL;
@@ -2333,13 +2512,6 @@ static uint32_t processBiosEntries12Pass1(unsigned int *eventNum,	/* events proc
 		printf("ERROR: processBiosEntries12Pass1: error unmarshaling event %u\n", *eventNum);
 	    }
 	}
-	if ((rc == 0) && !done) {
-	    if (event.pcrIndex > TPM_BIOS_PCR) {
-		printf("ERROR: processBiosEntries12Pass1: PCR number %u out of range\n",
-		       event.pcrIndex);
-		rc = ACE_PCR_INDEX;
-	    }
-	}
 	/* extend recalculated PCRs based on this event.  This function also does the PCR range
 	   check. */
 	if ((rc == 0) && !done) {
@@ -2352,9 +2524,11 @@ static uint32_t processBiosEntries12Pass1(unsigned int *eventNum,	/* events proc
 	    }
 	}
 	if ((rc == 0) && !done) {
-	    if (vverbose) Array_Print(NULL, "processBiosEntries12Pass1: PCR digest", TRUE,
-				      (uint8_t *)&biosPcrs[event.pcrIndex].digest,
-				      SHA1_DIGEST_SIZE);
+	    if (event.pcrIndex < IMPLEMENTATION_PCR) {
+		if (vverbose) Array_Print(NULL, "processBiosEntries12Pass1: PCR digest", TRUE,
+					  (uint8_t *)&biosPcrs[event.pcrIndex].digest,
+					  SHA1_DIGEST_SIZE);
+	    }
 	}
 	free(eventBin);			/* @1 */
 	eventBin = NULL;
@@ -2561,7 +2735,7 @@ static uint32_t processImaEntries20Pass1(unsigned int *logVerified,
 		eof = JS_Cmd_GetImaEvent(&eventString,	/* freed @3 */
 					 imaEventNum,
 					 cmdJson);
-		/* If there is no next event, done walki1ng measurement list.  This is not a json
+		/* If there is no next event, done walking measurement list.  This is not a json
 		   error, because the server does not know in advance how many entries the client
 		   will send.  However, since IMA PCR did not match, there is an error to be
 		   processed below.  */
@@ -2766,7 +2940,7 @@ static uint32_t processImaEntries12Pass1(unsigned int *logVerified,	/* bool, PCR
 		eof = JS_Cmd_GetImaEvent(&eventString,	/* freed @3 */
 					 imaEventNum,
 					 cmdJson);
-		/* If there is no next event, done walki1ng measurement list.  This is not a json
+		/* If there is no next event, done walking measurement list.  This is not a json
 		   error, because the server does not know in advance how many entries the client
 		   will send.  However, since IMA PCR did not match, there is an error to be
 		   processed below.  */
@@ -3007,7 +3181,7 @@ static uint32_t verifyQuoteSignature12(unsigned int 	*quoteVerified,		/* result 
 
 static uint32_t verifyQuoteSignatureRSA(unsigned int 	*quoteVerified,		/* result */
 					int 		sha256,			/* boolean */
-					TPMT_HA 	*digest,		/* messsage */
+					TPMT_HA 	*digest,		/* message */
 					X509 		*x509,			/* public key */
 					uint16_t 	signatureSize,
 					uint8_t		*signature)		/* signature */
@@ -3143,15 +3317,14 @@ static uint32_t verifyQuoteNonce(unsigned int 	*quoteVerified,		/* boolean resul
     /* check nonce sizes */
     if (rc == 0) {
 	if (nonceServerBinSize != tpmsAttest->extraData.t.size) {
+	    *quoteVerified = FALSE;	/* quote nonce */
 	    printf("ERROR: verifyQuoteNonce: nonce size mismatch, server %lu client %u\n",
 		   nonceServerBinSize, tpmsAttest->extraData.t.size);
-	    rc = ACE_NONCE_LENGTH;
 	}
     }
     /* compare to the server nonce to the client nonce from the quoted */
     if (rc == 0) {
 	if (memcmp(nonceServerBin, &tpmsAttest->extraData.t.buffer, nonceServerBinSize) != 0) {
-	    rc = ACE_NONCE_VALUE;
 	    *quoteVerified = FALSE;	/* quote nonce */
 	    printf("ERROR: verifyQuoteNonce: client nonce does not match server database\n");  
 	}
@@ -3295,26 +3468,76 @@ static uint32_t processQuoteResults12(json_object 	*cmdJson,
 
 #endif /* TPM_TPM12 */
 
-/* processLogResults() updates the attestdb with the boolean log verified result */
+/* processBiosLogResults() updates the attestdb with:
 
-uint32_t processLogResults(unsigned int logVerified,
-			   unsigned int eventNum,
-			   unsigned int nextImaEventNum,	/* next IMA event to be processed */
-			   const char 	*attestLogId,
-			   MYSQL 	*mysql)
+   the boolean log verified result
+   the number of BIOS events processed
+*/
+
+uint32_t processBiosLogResults(unsigned int 	logVerified,	/* PCR digest matches event logs */
+			   unsigned int 	eventNum,	/* BIOS events processed */
+			   const char 		*attestLogId,
+			   MYSQL 		*mysql)
 {
     uint32_t 	rc = 0;
     int 	irc;
     char 	query[QUERY_LENGTH_MAX];
 
-    if (vverbose) printf("processLogResults: logVerified %u eventNum %u imaEventNum %u\n",
-			 logVerified, eventNum, nextImaEventNum);
+    if (vverbose) printf("processBiosLogResults: logVerified %u eventNum %u\n",
+			 logVerified, eventNum);
     if (rc == 0) {
 	irc = snprintf(query, QUERY_LENGTH_MAX,
-		       "update attestlog set logverified = '%u', imaver = '%u' where id = '%s'",
-		       logVerified, logVerified, attestLogId);
+		       "update attestlog set logverified = '%u' where id = '%s'",
+		       logVerified, attestLogId);
 	if (irc >= QUERY_LENGTH_MAX) {
-	    printf("ERROR: processLogResults: SQL query overflow\n");
+	    printf("ERROR: processBiosLogResults: SQL query overflow\n");
+	    rc = ASE_SQL_ERROR;
+	}
+    }
+    if (rc == 0) {
+	rc = SQ_Query(NULL, mysql, query);
+    }
+    if (logVerified) {
+	if (rc == 0) {
+	    irc = snprintf(query, QUERY_LENGTH_MAX,
+			   "update attestlog set logentries = '%u' "
+			   "where id = '%s'",
+			   eventNum, attestLogId);
+	    if (irc >= QUERY_LENGTH_MAX) {
+		printf("ERROR: processBiosLogResults: SQL query overflow\n");
+		rc = ASE_SQL_ERROR;
+	    }
+	}
+	if (rc == 0) {
+	    rc = SQ_Query(NULL, mysql, query);
+	}
+    }
+    return rc;
+}
+
+/* processImaLogResults() updates the attestdb:
+
+   with the boolean log verified result
+   the number of IMA events processed
+*/
+
+uint32_t processImaLogResults(unsigned int 	logVerified,		/* PCR digest matches event logs */
+			      unsigned int 	nextImaEventNum,	/* next IMA event to be processed */
+			      const char 	*attestLogId,
+			      MYSQL 		*mysql)
+{
+    uint32_t 	rc = 0;
+    int 	irc;
+    char 	query[QUERY_LENGTH_MAX];
+
+    if (vverbose) printf("processImaLogResults: logVerified %u imaEventNum %u\n",
+			 logVerified, nextImaEventNum);
+    if (rc == 0) {
+	irc = snprintf(query, QUERY_LENGTH_MAX,
+		       "update attestlog set imaver = '%u' where id = '%s'",
+		       logVerified, attestLogId);
+	if (irc >= QUERY_LENGTH_MAX) {
+	    printf("ERROR: processImaLogResults: SQL query overflow\n");
 	    rc = ASE_SQL_ERROR;
 	}
     }
@@ -3326,11 +3549,11 @@ uint32_t processLogResults(unsigned int logVerified,
 	    /* lastImaEventNum is the last event processed.  imaEventNum-1 is the number of events
 	       processed */
 	    irc = snprintf(query, QUERY_LENGTH_MAX,
-			   "update attestlog set logentries = '%u', imaevents  = '%u' "
+			   "update attestlog set imaevents  = '%u' "
 			   "where id = '%s'",
-			   eventNum, nextImaEventNum, attestLogId);
+			   nextImaEventNum, attestLogId);
 	    if (irc >= QUERY_LENGTH_MAX) {
-		printf("ERROR: processLogResults: SQL query overflow\n");
+		printf("ERROR: processImaLogResults: SQL query overflow\n");
 		rc = ASE_SQL_ERROR;
 	    }
 	}
@@ -3510,8 +3733,15 @@ static uint32_t processBiosEntries20Pass2(const char *hostname,
     uint32_t 		rc = 0;
     int 		eventNum;
     unsigned char 	*eventBin = NULL;
+    /* common the TPM 1.2 and TPM 2.0 event */
+    uint32_t		pcrIndex;
+    uint8_t		*eventPtr = NULL;
+    uint32_t 		eventSize = 0;
+    const char		 *eventTypeString;
+    char 		*pcrSha1Hexascii = NULL;
+    char 		*pcrSha256Hexascii = NULL;
 
-    for (eventNum = 1 ; (rc == 0) ; eventNum++) {
+    for (eventNum = 0 ; (rc == 0) ; eventNum++) {
 	/* get the next event */
 	char *entryString = NULL;
 	size_t eventLength;
@@ -3538,74 +3768,113 @@ static uint32_t processBiosEntries20Pass2(const char *hostname,
 		printf("ERROR: processBiosEntries20Pass2: error scanning event %u\n", eventNum);
 	    }
 	}
-	TCG_PCR_EVENT2 event2;	/* TPM 2.0 hash agile event log entry */
-	/* unmarshal the event from binary to structure */
-	if (rc == 0) {
-	    if (vverbose) printf("processBiosEntries20Pass2: unmarshaling event %u\n", eventNum);
-	    unsigned char *eventBinPtr = eventBin;	/* ptr that moves */
-	    uint32_t eventLengthPtr = eventLength;
-	    memset(event2.event, 0, sizeof(event2.event));	/* initialize to NUL terminated */
-	    rc = TSS_EVENT2_Line_Unmarshal(&event2, &eventBinPtr, &eventLengthPtr);
-	    if (rc != 0) {
-		printf("ERROR: processBiosEntries20Pass2: error unmarshaling event %u\n", eventNum);
+	/* TPM 1.2 agile event log entry, first event */
+	if (eventNum == 0) {
+	    TCG_PCR_EVENT event;
+	    /* unmarshal the event from binary to structure */
+	    if (rc == 0) {
+		if (vverbose) printf("processBiosEntries20Pass2: unmarshaling event %u\n", eventNum);
+		unsigned char *eventBinPtr = eventBin;	/* ptr that moves */
+		uint32_t eventLengthPtr = eventLength;
+		memset(event.event, 0, sizeof(event.event));	/* initialize to NUL terminated */
+		rc = TSS_EVENT_Line_Unmarshal(&event, &eventBinPtr, &eventLengthPtr);
+		if (rc != 0) {
+		    printf("ERROR: processBiosEntries20Pass2: error unmarshaling event %u\n",
+			   eventNum);
+		}
+	    }
+	    if (rc == 0) {
+		pcrIndex = event.pcrIndex;	/* for DB write */
+		/* convert the event type to nul terminated ascii string */
+		eventTypeString = TSS_EVENT_EventTypeToString(event.eventType);
+		eventPtr = event.event;
+		eventSize = event.eventDataSize;
+		pcrSha256Hexascii = NULL;
+		rc = Array_PrintMalloc(&pcrSha1Hexascii,		/* freed @3 */
+				       event.digest,
+				       SHA1_DIGEST_SIZE);
 	    }
 	}
-	/* convert the event type to nul terminated ascii string */
-	const char *eventTypeString;
-	if (rc == 0) {
-	    eventTypeString = TSS_EVENT_EventTypeToString(event2.eventType);
+	else {	/* TPM 2.0 events after event 0 */
+	    TCG_PCR_EVENT2 event2;	/* TPM 2.0 hash agile event log entry */
+	    /* unmarshal the event from binary to structure */
+	    if (rc == 0) {
+		if (vverbose) printf("processBiosEntries20Pass2: unmarshaling event %u\n",
+				     eventNum);
+		unsigned char *eventBinPtr = eventBin;	/* ptr that moves */
+		uint32_t eventLengthPtr = eventLength;
+		memset(event2.event, 0, sizeof(event2.event));	/* initialize to NUL terminated */
+		rc = TSS_EVENT2_Line_Unmarshal(&event2, &eventBinPtr, &eventLengthPtr);
+		if (rc != 0) {
+		    printf("ERROR: processBiosEntries20Pass2: error unmarshaling event %u\n",
+			   eventNum);
+		}
+	    }
+	    if (rc == 0) {
+		pcrIndex = event2.pcrIndex;	/* for DB write */
+		/* convert the event type to nul terminated ascii string */
+		eventTypeString = TSS_EVENT_EventTypeToString(event2.eventType);
+		eventSize = event2.eventSize;
+		eventPtr = event2.event;
+	    }
+	    uint32_t count;
+	    for (count = 0 ; (rc == 0)  && (count < event2.digests.count) && (count < 2) ; count++) {
+		/* convert SHA1 PCR to hexascii */
+		if (event2.digests.digests[count].hashAlg == ALG_SHA1_VALUE) {
+		    rc = Array_PrintMalloc(&pcrSha1Hexascii,		/* freed @3 */
+					   event2.digests.digests[count].digest.sha1,
+					   SHA1_DIGEST_SIZE);
+		}
+		/* convert SHA256 PCR to hexascii */
+		else if (event2.digests.digests[count].hashAlg == ALG_SHA256_VALUE) {
+		    rc = Array_PrintMalloc(&pcrSha256Hexascii,		/* freed @4 */
+					   event2.digests.digests[count].digest.sha256,
+					   SHA256_DIGEST_SIZE);
+		}
+		else {
+		    if (verbose) printf("processBiosEntries20Pass2: "
+					"event %u unknown hash alg %04x\n",
+					eventNum, event2.digests.digests[count].hashAlg);
+		}
+	    }
 	}
 	/* convert the event to nul terminated ascii string */
 	char eventString[256];	/* matches schema */
-	char *eventStringPtr;
-	char *eventStringHexascii = NULL;
+	char *eventStringPtr = NULL;
 	if (rc == 0) {
-	    if (isprint(event2.event[0])) {
-		eventStringPtr = eventString;
-		int length;
-		if (event2.eventSize < sizeof(eventString)) {
-		    length = event2.eventSize + 1;
-		}
-		else {
-		    length = sizeof(eventString);	/* truncate */
-		}
-		snprintf(eventString, length, "%.*s", length, event2.event);
+	    int length;
+	    if (eventSize < sizeof(eventString)) {
+		length = eventSize;
 	    }
-	    /* some events are not printable */
 	    else {
-		if (rc == 0) {
-		    rc = Array_PrintMalloc(&eventStringHexascii,	/* freed @2 */
-					   event2.event,
-					   event2.eventSize);
-		}
-		if (rc == 0) {
-		    eventStringPtr = eventStringHexascii; 
-		}
+		length = sizeof(eventString) -1;	/* truncate */
 	    }
-	    if (vverbose) printf("processBiosEntries20Pass2: event %u %s\n",
+	    /* guess whether it's printable */
+	    if (isprint(eventPtr[0]) && isprint(eventPtr[1])) {
+		snprintf(eventString, length, "%.*s", length, eventPtr);
+		/* FIXME factor this for all sql inserts, escape single quotes */
+		if (rc == 0) {
+		    size_t len = strlen(eventString) +1; 
+		    eventStringPtr = malloc(len);		/* freed @6 */
+		    if (eventStringPtr == NULL) {
+			printf("processBiosEntries20Pass2: Cannot alloc %lu for event\n", len);
+			rc = TSS_RC_OUT_OF_MEMORY;
+		    }
+		    else {
+			strcpy(eventStringPtr, eventString);
+		    }
+		}
+		if (rc == 0) {
+		    rc = SQ_EscapeQuotes(&eventStringPtr);
+		}
+
+	    }
+	    /* some events are not printable as ascii */
+	    else {
+		Array_PrintMalloc(&eventStringPtr, eventPtr, length);
+	    }
+	    if (vverbose) printf("processBiosEntries20Pass2: event %u truncated: %s\n",
 				 eventNum, eventStringPtr);
-	}
-	uint32_t count;
-	char *pcrSha1Hexascii = NULL;
-	char *pcrSha256Hexascii = NULL;
-	
-	for (count = 0 ; (rc == 0)  && (count < event2.digests.count) && (count < 2) ; count++) {
-	    /* convert SHA1 PCR to hexascii */
-	    if (event2.digests.digests[count].hashAlg == ALG_SHA1_VALUE) {
-		rc = Array_PrintMalloc(&pcrSha1Hexascii,		/* freed @3 */
-				       event2.digests.digests[count].digest.sha1,
-				       SHA1_DIGEST_SIZE);
-	    }
-	    /* convert SHA256 PCR to hexascii */
-	    else if (event2.digests.digests[count].hashAlg == ALG_SHA256_VALUE) {
-		rc = Array_PrintMalloc(&pcrSha256Hexascii,		/* freed @4 */
-				       event2.digests.digests[count].digest.sha256,
-				       SHA256_DIGEST_SIZE);
-	    }
-	    else {
-		if (verbose) printf("processBiosEntries20Pass2: event %u unknown hash alg %04x\n",
-				    eventNum, event2.digests.digests[count].hashAlg);
-	    }
 	}
 	/* insert the event into the bioslog database */
 	char query[QUERY_LENGTH_MAX];
@@ -3616,21 +3885,21 @@ static uint32_t processBiosEntries20Pass2(const char *hostname,
 	    if (length > ACS_JSON_EVENT_DBMAX) {
 		entryString[ACS_JSON_EVENT_DBMAX] = '\0';
 	    }
-	    length = strlen(eventStringPtr);
+	    length = strlen(eventString);
 	    if (length > ACS_JSON_EVENT_DBMAX) {
-		eventStringPtr[ACS_JSON_EVENT_DBMAX] = '\0';
+		eventString[ACS_JSON_EVENT_DBMAX] = '\0';
 	    }
 	    int irc = snprintf(query, QUERY_LENGTH_MAX,
-		    "insert into bioslog "
-		    "(hostname, timestamp, entrynum, bios_entry, "
-		    "pcrindex, pcrsha1, pcrsha256, "
-		    "eventtype, event) "
-		    "values ('%s','%s','%u','%s', "
-		    "'%u','%s','%s', "
-		    "'%s','%s')",
-		    hostname, timestamp, eventNum, entryString,
-		    event2.pcrIndex, pcrSha1Hexascii, pcrSha256Hexascii,
-		    eventTypeString, eventStringPtr);
+			       "insert into bioslog "
+			       "(hostname, timestamp, entrynum, bios_entry, "
+			       "pcrindex, pcrsha1, pcrsha256, "
+			       "eventtype, event) "
+			       "values ('%s','%s','%u','%s', "
+			       "'%u','%s','%s', "
+			       "'%s','%s')",
+			       hostname, timestamp, eventNum, entryString,
+			       pcrIndex, pcrSha1Hexascii, pcrSha256Hexascii,
+			       eventTypeString, eventStringPtr);
 	    if (irc >= QUERY_LENGTH_MAX) {
 		printf("ERROR: processBiosEntries20Pass2: SQL query overflow\n");
 		rc = ASE_SQL_ERROR;
@@ -3641,15 +3910,15 @@ static uint32_t processBiosEntries20Pass2(const char *hostname,
 	}
 	/* loop free */
 	free(eventBin);			/* @1 */
-	free(eventStringHexascii);	/* @2 */
 	free(pcrSha1Hexascii);		/* @3 */
 	free(pcrSha256Hexascii);	/* @4 */
 	free(entryString);		/* @5 */
+	free(eventStringPtr);		/* @6 */
 	eventBin = NULL;
-	eventStringHexascii = NULL;
 	pcrSha1Hexascii = NULL;
 	pcrSha256Hexascii = NULL;
 	entryString = NULL;
+	eventStringPtr = NULL;
     }	/* for eventNum */
     /* error case free */
     free(eventBin);		/* @1 */
@@ -3815,7 +4084,7 @@ static uint32_t processImaEntriesPass2(int *imasigver,
 				       const char *boottime,	/* for DB row */
 				       const char *timestamp,	/* for DB row */
 				       json_object *cmdJson,	/* client command */
-				       unsigned int firstEventNum, 	/* first IMA evet to be
+				       unsigned int firstEventNum, 	/* first IMA event to be
 									   processed */
 				       unsigned int lastEventNum,	/* last ima entry to be
 									   processed */
@@ -3964,6 +4233,7 @@ static uint32_t processImaEntriesPass2(int *imasigver,
 	/* insert the event into the imalog database */
 	char query[QUERY_LENGTH_MAX];
 	/* This hack escapes the ' character in a file name. */
+	/* FIXME this should be factored for all client data written to the DB */
 	char *filenameEscaped = NULL;
 	if (rc == 0) {
 	    size_t len = strlen(filename) +1; 
@@ -4634,6 +4904,12 @@ static uint32_t processEnrollCert(unsigned char **rspBuffer,
     if (rc == 0) {
 	rc = SQ_Query(NULL, mysql, query);
     }
+#ifdef ACS_BLOCKCHAIN
+    /* Send the results to blockchain log */
+    if (rc == 0) {
+	rc  = BC_Enroll(ekCertificatePem, akCertPemString);
+    }
+#endif
     /* create the enrollcert return json */
     json_object *response = NULL;
     uint32_t rc1 = JS_ObjectNew(&response);	/* freed @1 */
@@ -4668,6 +4944,330 @@ static uint32_t processEnrollCert(unsigned char **rspBuffer,
     return rc;
 }
 
+#ifdef ACS_UNSEAL
+
+/* processUnsealAuth() handles the client request for an unseal authorization.  It uses the PCR
+   white list as the valid PCRs.
+
+   The client command is of the form:
+   
+   {
+   "command":"unsealauth",
+   "hostname":"cainl.watson.ibm.com"
+   }
+
+   The response to the client is of the form:
+
+   "response":"unsealauth",
+   "pcrselect":"00000002000b03ff0400000403000000",
+   "approvedpolicy":"000b....",
+   "signature":0014000b0100...."
+*/
+
+static uint32_t processUnsealAuth(unsigned char **rspBuffer,
+				  uint32_t *rspLength,
+				  json_object *cmdJson)
+{
+    uint32_t  	rc = 0;		/* server error, should never occur, aborts processing */
+    int		irc;
+
+    if (vverbose) printf("INFO: processUnsealAuth: Entry\n");
+    /* get the client machine name from the command */
+    const char *hostname = NULL;
+    if (rc == 0) {
+	rc = JS_ObjectGetString(&hostname, "hostname", ACS_JSON_HOSTNAME_MAX, cmdJson);
+    }
+    /* read PCR white list from machines table.  For the demo, use PCRs from the first
+       attestation as the white list */
+    MYSQL_RES 		*machineResult = NULL;
+    const char 		*pcrsSha1String[IMPLEMENTATION_PCR];
+    const char 		*pcrsString[IMPLEMENTATION_PCR];
+   /* connect to the db */
+    MYSQL *mysql = NULL;
+    if (rc == 0) {
+	rc = SQ_Connect(&mysql);			/* closed @1 */	
+    }
+    if (rc == 0) {
+	rc = SQ_GetFirstPcrs(pcrsString,
+			     &machineResult,		/* freed @2 */
+			     mysql,
+			     hostname);
+    }
+    /* no PCR white list, missing valid quote */
+    if (rc == 0) {
+	if (pcrsString[0] == NULL) {
+	    printf("ERROR: processUnsealAuth: hostname %s has not validated a quote\n",
+		   hostname);  
+	    rc = ACE_QUOTE_MISSING;
+	}
+    }
+    /*
+      calculate approvedPolicy - PolicyPCR || PCR Selection || digestTPM
+    */
+    TPML_PCR_SELECTION 	pcrSelection;
+    uint8_t		*pcrSelectionBin = NULL;
+    uint16_t		pcrSelectionBinLen;
+    if (rc == 0) {
+	/* get the PCR selection, use the same one as for the quote, since those are the valid PCRs
+	   on the database */
+	makePcrSelect20(&pcrSelection);
+	/* marshal the TPML_PCR_SELECTION */
+	rc = TSS_Structure_Marshal(&pcrSelectionBin,		/* freed @3 */
+				   &pcrSelectionBinLen,
+				   &pcrSelection,
+				   (MarshalFunction_t)TSS_TPML_PCR_SELECTION_Marshal);
+    }
+    
+    /* convert the machines database PCRs from hexascii string to binary */
+    unsigned char *pcrsSha1Bin[IMPLEMENTATION_PCR];
+    size_t pcrsSha1BinSize[IMPLEMENTATION_PCR];
+    unsigned char *pcrsSha256Bin[IMPLEMENTATION_PCR];
+    size_t pcrsSha256BinSize[IMPLEMENTATION_PCR];
+    uint32_t pcrNum;
+    /* NULL the pointers for the free */
+    for (pcrNum = 0 ; pcrNum < IMPLEMENTATION_PCR ; pcrNum++) {
+	pcrsSha1Bin[pcrNum] = NULL;
+	pcrsSha256Bin[pcrNum] = NULL;
+    }
+    if (rc == 0) {
+	rc = pcrStringToBin(pcrsSha1Bin,	/* freed @4 */
+			    pcrsSha1BinSize,
+			    pcrsSha256Bin, 	/* freed @5 */
+			    pcrsSha256BinSize,
+			    pcrsSha1String,
+			    pcrsString);
+    }
+    /* concatenate the PCRs into a stream */
+    unsigned char pcrBinStream[HASH_COUNT * IMPLEMENTATION_PCR * MAX_DIGEST_SIZE];
+    size_t pcrBinStreamSize = 0;
+    if (rc == 0) {
+	rc = makePcrStream20(pcrBinStream,
+			     &pcrBinStreamSize,
+			     pcrsSha256Bin,
+			     &pcrSelection);
+    }
+    if (rc == 0) {
+	if (vverbose) Array_Print(NULL, "processUnsealAuth: PCR stream", TRUE,
+				  pcrBinStream, pcrBinStreamSize);
+    }
+    /* hash the stream to construct the TPM2_PolicyPCR digestTPM */
+    TPMT_HA digestTPM;
+    if (rc == 0) {
+	digestTPM.hashAlg = TPM_ALG_SHA256;	/* algorithm of signing key */
+	rc = TSS_Hash_Generate(&digestTPM,
+			       pcrBinStreamSize, pcrBinStream,
+			       0, NULL);
+    }
+    /* calculate approvedPolicy, see TPM2_PolicyPCR() policyDigest calculation
+       
+       policyDigestnew := HpolicyAlg(policyDigestold || TPM_CC_PolicyCommandCode || code)
+       policyDigestnew := HpolicyAlg(policyDigestold || TPM_CC_PolicyPCR || pcrs || digestTPM)
+    */
+    TPMT_HA approvedPolicy;
+    /* Policy Command Code */
+    if (rc == 0) {
+	approvedPolicy.hashAlg = TPM_ALG_SHA256;	/* algorithm of signing key */
+	/* policyDigestold is all zero */
+	memset((uint8_t *)&approvedPolicy.digest.sha256, 0, SHA256_DIGEST_SIZE);
+
+	TPM_CC commandCodeNbo = htonl(TPM_CC_Unseal);
+	TPM_CC policyCommandCodeNbo = htonl(TPM_CC_PolicyCommandCode);
+	if (vverbose) {
+	    Array_Print(NULL, "processUnsealAuth: policyDigestold", TRUE,
+			approvedPolicy.digest.sha256, SHA256_DIGEST_SIZE);
+	    Array_Print(NULL, "processUnsealAuth: policyCommandCodeNbo ", TRUE,
+			(uint8_t *)&policyCommandCodeNbo, sizeof(TPM_CC));
+	    Array_Print(NULL, "processUnsealAuth: commandCodeNbo ", TRUE,
+			(uint8_t *)&commandCodeNbo, sizeof(TPM_CC));
+	}
+	rc = TSS_Hash_Generate(&approvedPolicy,
+			       SHA256_DIGEST_SIZE, approvedPolicy.digest.sha256, /* old */
+			       sizeof(TPM_CC), &policyCommandCodeNbo , 	/* TPM_CC_PolicyCommandCode*/
+			       sizeof(TPM_CC), &commandCodeNbo, 	/* TPM_CC_Unseal */
+			       0, NULL);
+    }
+    if (rc == 0) {
+	if (vverbose) Array_Print(NULL, "processUnsealAuth: approvedPolicy intermediate", TRUE,
+				  approvedPolicy.digest.sha256, SHA256_DIGEST_SIZE);
+    }
+    /* Policy PCR */
+    if (rc == 0) {
+	TPM_CC commandCodeNbo = htonl(TPM_CC_PolicyPCR);
+
+	if (vverbose) {
+	    Array_Print(NULL, "processUnsealAuth: policyDigestold", TRUE,
+			approvedPolicy.digest.sha256, SHA256_DIGEST_SIZE);
+	    Array_Print(NULL, "processUnsealAuth: commandCodeNbo", TRUE,
+			(uint8_t *)&commandCodeNbo, sizeof(TPM_CC));
+	    Array_Print(NULL, "processUnsealAuth: pcrs", TRUE,
+			pcrSelectionBin, pcrSelectionBinLen);
+	    Array_Print(NULL, "processUnsealAuth: digestTPM", TRUE,
+			digestTPM.digest.sha256, SHA256_DIGEST_SIZE);
+	}
+	rc = TSS_Hash_Generate(&approvedPolicy,
+			       SHA256_DIGEST_SIZE, approvedPolicy.digest.sha256, /* old */
+			       sizeof(TPM_CC), &commandCodeNbo, 	/* TPM_CC_PolicyPCR */
+			       pcrSelectionBinLen, pcrSelectionBin,	/* pcrs selection */
+			       SHA256_DIGEST_SIZE, digestTPM.digest.sha256, 	/* digestTPM */
+			       0, NULL);
+    }
+    if (rc == 0) {
+	if (vverbose) Array_Print(NULL, "processUnsealAuth: approvedPolicy", TRUE,
+				  approvedPolicy.digest.sha256, SHA256_DIGEST_SIZE);
+    }
+    /* calculate aHash, see TPM2_PolicyAuthorize()
+
+       aHash := HaHashAlg(approvedPolicy || policyRef)
+     */
+    TPMT_HA aHash;
+    if (rc == 0) {
+	aHash.hashAlg = TPM_ALG_SHA256;		/* algorithm of signing key */
+	rc = TSS_Hash_Generate(&aHash,
+			       SHA256_DIGEST_SIZE, approvedPolicy.digest.sha256,
+			       0, NULL,		/* Empty policyRef, would go here */
+			       0, NULL);
+    }
+    if (rc == 0) {
+	if (vverbose) Array_Print(NULL, "processUnsealAuth: aHash", TRUE,
+				  aHash.digest.sha256, SHA256_DIGEST_SIZE);
+    }
+    /*
+      sign aHash
+    */
+    /* get TPM2_PolicyAuthorize authorization signing key AUTH_KEY */
+    EVP_PKEY *authKey = NULL;
+    if (rc == 0) {
+	rc = convertPemToEvpPrivKey(&authKey,		/* freed @6 */
+				    AUTH_KEY,
+				    AUTH_KEY_PASSWORD);
+    }
+    EVP_PKEY_CTX *ctx = NULL;
+    if (rc == 0) {
+        ctx = EVP_PKEY_CTX_new(authKey, NULL);		/* freed @7 */
+	if (ctx == NULL) {
+	    printf("ERROR: processUnsealAuth: EVP_PKEY_CTX_new() failed\n");  
+	    rc = ASE_OUT_OF_MEMORY;
+	}
+    }
+    if (rc == 0) {
+	irc = EVP_PKEY_sign_init(ctx);
+	if (irc != 1) {
+	    printf("ERROR: processUnsealAuth: EVP_PKEY_sign_init() failed\n");  
+	    rc = ASE_OSSL_RSA;
+	}
+    }
+    if (rc == 0) {
+	irc = EVP_PKEY_CTX_set_rsa_padding(ctx, RSA_PKCS1_PADDING);
+	if (irc != 1) {
+	    printf("ERROR: processUnsealAuth: EVP_PKEY_CTX_set_rsa_padding() failed\n");  
+	    rc = ASE_OSSL_RSA;
+	}
+    }
+    if (rc == 0) {
+	irc = EVP_PKEY_CTX_set_signature_md(ctx, EVP_sha256());
+	if (irc != 1) {
+	    printf("ERROR: processUnsealAuth: EVP_PKEY_CTX_set_signature_md() failed\n");  
+	    rc = ASE_OSSL_DIGEST;
+	}
+    }
+    /* construct TPMT_SIGNATURE */
+    TPMT_SIGNATURE tSignature;
+    tSignature.sigAlg = TPM_ALG_RSASSA;
+    tSignature.signature.rsassa.hash = TPM_ALG_SHA256;
+    /* sign aHash */
+    if (rc == 0) {
+	size_t siglen = MAX_RSA_KEY_BYTES;
+	irc = EVP_PKEY_sign(ctx,
+			    tSignature.signature.rsassa.sig.t.buffer, &siglen,
+			    aHash.digest.sha256, SHA256_DIGEST_SIZE);
+	if (irc != 1) {
+	}
+	else {
+	    tSignature.signature.rsassa.sig.t.size = siglen;
+	}
+    }
+    if (rc == 0) {
+	if (vverbose) Array_Print(NULL, "processUnsealAuth: signature", TRUE,
+				  tSignature.signature.rsassa.sig.t.buffer,
+				  tSignature.signature.rsassa.sig.t.size);
+    }
+    /* TPMT_SIGNATURE to hexascii */
+    char *tSignatureString = NULL;
+    if (rc == 0) {
+	rc = Structure_Print(&tSignatureString,		/* freed @8 */
+			     &tSignature,
+			     (MarshalFunction_t)TSS_TPMT_SIGNATURE_Marshal);
+    }
+    /* TPML_PCR_SELECTION to hexascii */
+    char *pcrSelectionString = NULL;
+    if (rc == 0) {
+	rc = Structure_Print(&pcrSelectionString,	/* freed @9 */
+			     &pcrSelection,
+			     (MarshalFunction_t)TSS_TPML_PCR_SELECTION_Marshal); 
+    }
+    /* convert approvedPolicy to hexascii */
+    char *approvedPolicyString = NULL;
+    if (rc == 0) {
+	rc = Structure_Print(&approvedPolicyString,	/* freed @10 */
+			     &approvedPolicy,
+			     (MarshalFunction_t)TSS_TPMT_HA_Marshal); 
+    }
+    /* create the unsealauth return json */
+    json_object *response = NULL;
+    uint32_t rc1 = JS_ObjectNew(&response);	/* freed @1 */
+    if (rc1 == 0) {
+	if (rc == 0) {
+	    json_object_object_add(response, "response",
+				   json_object_new_string("unsealauth"));
+	}
+	if (rc == 0) {
+	    json_object_object_add(response, "pcrselect",
+				   json_object_new_string(pcrSelectionString));
+	}
+	if (rc == 0) {
+	    json_object_object_add(response, "approvedpolicy",
+				   json_object_new_string(approvedPolicyString));
+	}
+	if (rc == 0) {
+	    json_object_object_add(response, "signature",
+				   json_object_new_string(tSignatureString));
+	}
+	/* processing error */
+	else {
+	    rc1 = JS_Rsp_AddError(response, rc);
+	}
+	if (rc1 == 0) {	
+	    rc = JS_ObjectSerialize(rspLength,
+				    (char **)rspBuffer,	/* freed by caller */
+				    response);		/* @1 */
+ 	}
+    }
+    /* could not construct response */
+    else {
+	rc = rc1;
+    }
+    SQ_Close(mysql);			/* @1 */
+    SQ_FreeResult(machineResult);	/* @2 */
+    free(pcrSelectionBin);		/* @3 */
+    for (pcrNum = 0 ; pcrNum < IMPLEMENTATION_PCR ; pcrNum++) {
+	free(pcrsSha1Bin[pcrNum]);	/* @4 */
+    }
+    for (pcrNum = 0 ; pcrNum < IMPLEMENTATION_PCR ; pcrNum++) {
+	free(pcrsSha256Bin[pcrNum]);	/* @5 */
+    }
+    if (authKey != NULL) {
+	EVP_PKEY_free(authKey);		/* @6 */
+    }
+    if (ctx != NULL) {
+	EVP_PKEY_CTX_free(ctx);		/* @7 */
+    }
+    free(tSignatureString);		/* @8 */
+    free(pcrSelectionString);		/* @9 */
+    free(approvedPolicyString);		/* @10 */
+    return rc;
+}
+
+#endif
 
 /* validateEkCertificate() validates the EK certificate against the TPM vendor root.
 
@@ -5554,5 +6154,16 @@ static void printUsage(void)
     printf("[-v verbose trace\n");
     printf("[-vv very verbose trace\n");
     printf("\n");
+#ifdef ACS_BLOCKCHAIN
+    printf("Blockchain environment variables\n");
+    printf("\n");
+    printf("\t[ACS_BC_SERVER - blockchain server name (default localhost)]\n");
+    printf("\t[ACS_BC_PORT - blockchain server port (default 5000)]\n");
+    printf("\t[ACS_BC_URL - blockchain server URL (default chaincode)]\n");
+    printf("\n");
+    printf("\tThat is, the default is http://localhost:5000/chaincode\n");
+    printf("\tFor debug, typically use http://localhost:80/chaincode.php\n");
+    printf("\n");
+#endif
     exit(1);	
 }

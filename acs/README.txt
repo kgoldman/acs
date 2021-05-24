@@ -1,4 +1,4 @@
-$Id: README.txt 1630 2020-06-04 18:37:01Z kgoldman $
+$Id: README.txt 1669 2021-05-21 22:19:52Z kgoldman $
 Written by Ken Goldman
 IBM Thomas J. Watson Research Center
 
@@ -32,6 +32,13 @@ php
 php-devel
 php-mysql
 
+#ifdef ACS_BLOCKCHAIN
+
+For the blockchain option
+
+libcurl-devel
+
+#endif
 
 # service mysqld start
 # service httpd start
@@ -166,6 +173,11 @@ For TPM 1.2 and TPM 2.0 client and TPM 1.2 / TPM 2.0 server
 	> setenv CPATH [path-to]/tpm2/utils:[path-to]/tpm2/utils12
 	> setenv LIBRARY_PATH [path-to]/tpm2/utils:[path-to]/tpm2/utils12
 	
+#ifdef ACS_BLOCKCHAIN
+	For the blockchain demo, add to the makefile CCFLAGS
+		-DACS_BLOCKCHAIN
+	To omit that code, remove that line
+#endif
 
 
 Provision the RSA EK Certificate CA Signing Key
@@ -252,7 +264,7 @@ SW TPM Provisioning
 TPM 2.0
 - - - -
 
-The TSS will normally default to these.	
+The TSS will normally default to these.
 
 	setenv TPM_COMMAND_PORT 2321
 	setenv TPM_SERVER_TYPE mssim
@@ -320,7 +332,7 @@ $OIAP is the handle from the OIAP command
 
 > osap -ha 40000001 -pwd ooo
 
-> nvdefinespace -ha 1000f000 -sz 1400 -per 20002 -se0 $OSAP 0 
+> nvdefinespace -ha 1000f000 -sz 1400 -per 20002 -se0 $OSAP 0
 
 > nvdefinespace -ha ffffffff -sz 0
 
@@ -351,7 +363,7 @@ pcakey.pem/ pcacert.pem  included in the package.
 
 Use AK CA as the common name
 
-3 - View the certificate for correctness.  
+3 - View the certificate for correctness.
 
 > openssl x509 -text -in pcacert.pem -noout
 
@@ -377,10 +389,27 @@ B - If the server is being run on a different machine from the client:
 > .../tpm2/utils/powerup
 > .../tpm2/utils/startup
 
-2 - Edit the file .../tpm2/utils/certificates/rootcerts.txt 
+2 - Edit the file .../tpm2/utils/certificates/rootcerts.txt
 
 Change the path name to wherever the directory is installed.
 
+#ifdef ACS_BLOCKCHAIN
+
+3 - Only if sending enrollment data to the blockchain server:
+
+Set the environment variables
+
+ACS_BC_SERVER	(default to localhost)
+ACS_BC_PORT	(default to 5000)
+ACS_BC_URL	(default chaincode)
+
+For testing without the blockchain server, use the chaincode.php web page
+
+setenv ACS_BC_SERVER localhost
+setenv ACS_BC_PORT 80
+setenv ACS_BC_URL acs/chaincode.php
+
+#endif
 
 4 - Set the server port
 
@@ -399,9 +428,9 @@ ACS_SQL_PASSWORD - defaults to empty
 ACS_SQL_DATABASE - defaults to tpm2
 
 
-6 - Start the attestation server.  
+6 - Start the attestation server.
 
-E.g., 
+E.g.,
 
 > server -v -root ../utils/certificates/rootcerts.txt -imacert imakey.der >! serverenroll.log4j
 
@@ -425,7 +454,7 @@ to hang.  Creating a primary key on a hardware TPM is a long calculation.
 This installs the client attestation key certificate at the
 attestation server.
 
-TPM 2.0
+zTPM 2.0
 - - - -
 
 > clientenroll -alg rsa -v -ho cainl.watson.ibm.com -co akcert.pem >! clientenroll.log4j
@@ -439,7 +468,7 @@ localhost.
 
 -v and piping to a file are optional.
 
-TPM 1.2 
+TPM 1.2
 - - - -
 
 > clientenroll12 -pwdo ooo -co akcert12.pem -v
@@ -467,7 +496,7 @@ As often as desired, run an attestation.
 
 > client -alg rsa -ifb tpm2bios.log -ifi imasig.log -ho cainl.watson.ibm.com -v >! client.log4j
 
-or 
+or
 
 > client -alg ec -ifb tpm2bios.log -ifi imasig.log -ho cainl.watson.ibm.com -v -ma cainlec.watson.ibm.com >! client.log4j
 
@@ -477,7 +506,7 @@ localhost.
 TPM 1.2
 - - - -
 
-> .../utils12//eventextend -if tpmbios.log -tpm 
+> .../utils12//eventextend -if tpmbios.log -tpm
 
 > .../utils12/imaextend -if imasig.log -le
 
@@ -504,9 +533,9 @@ minimal TSS.
 
 > cd .../utils
 
-To run with a HW TPM on a platform with no socket library, add to CCFLAGS  
+To run with a HW TPM on a platform with no socket library, add to CCFLAGS
 	-DTPM_NOSOCKET
-	
+
 create the minimal TSS for the ACS first, then the fill TSS for the utilities
 
 > make -f makefile.min clean all
@@ -542,21 +571,21 @@ Database Tables
 machines - all machines
 
 	id - primary key for machine
-	hostname - typically the fully qualified domain name, untrusted	
+	hostname - typically the fully qualified domain name, untrusted
 	tpmvendor - TPM manufacturer name,  untrusted
 	challenge - server to client enrollment challenge
 	ekcertificatepem - endorsement key certificate, pem format
 	ekcertificatetext - endorsement certificate, dump
-	attestpub - attestation public key 
+	attestpub - attestation public key
 	akcertificatepem - attestation key certificate, pem format
 	akcertificatetext - attestation certificate, dump
 	enrolled - date of attestation key enrollment
-	boottime - last boot time,  untrusted, 
+	boottime - last boot time,  untrusted,
 		whatever the client provides
 	imaevents - next IMA event to be processed
 		set to zero on enrollment
 		set back to zero on first quote or reboot
-	imapcr - value corresponding to imaevents, used for incremental update		
+	imapcr - value corresponding to imaevents, used for incremental update
 	pcr00-pcr23 - white list, values from first valid quote
 
 attestlog - all attestations for all machines
@@ -564,9 +593,9 @@ attestlog - all attestations for all machines
 	id - primary key for attestation
 	userid - userid of attestation, untrusted
 		whatever the client provides
-	hostname - typically the fully qualified domain name, untrusted, 
+	hostname - typically the fully qualified domain name, untrusted,
 		whatever the client provides
-	boottime - last boot time, untrusted, 
+	boottime - last boot time, untrusted,
 		whatever the client provides
 	timestamp - date  of attestation
 	nonce - freshness nonce
@@ -585,9 +614,9 @@ attestlog - all attestations for all machines
 imalog - current IMA event log for all machines
 
 	id - primary key for attestation
-	hostname - typically the fully qualified domain name, untrusted, 
+	hostname - typically the fully qualified domain name, untrusted,
 		whatever the client provides
-	boottime - last boot time,  untrusted, 
+	boottime - last boot time,  untrusted,
 		whatever the client provides
 	timestamp - server time of attestation
 	entrynum - ima event number
@@ -601,32 +630,32 @@ imalog - current IMA event log for all machines
 
 bioslog - current BIOS event log for all machines
 	id - primary key for attestation
-	hostname - typically the fully qualified domain name, untrusted, 
+	hostname - typically the fully qualified domain name, untrusted,
 		whatever the client provides
 	timestamp - server time of attestation
-	entrynum - bios event number	
+	entrynum - bios event number
 	bios_entry - the raw bios event as hex ascii
 	eventtype - TCG_PCR_EVENT2.eventType as ascii
 	event - TCG_PCR_EVENT2.event as ascii
 
 At enroll
 	machines insert
-		hostname 
+		hostname
 		tpmvendor
 		ekcertificatepem
 		ekcertificatetext
 		challenge
-		attestpub 
+		attestpub
 		akcertificatepem	null, then certificate
 		akcertificatetext	null, then certificate
 		imaevents		null, then 0
 		enrolled		null, then time
 		pcrnn			null
 		imapcr			null
-	
+
 At nonce
 	machines update
-		boottime		
+		boottime
 		imaevents		0
 		imapcr			0000...
 
@@ -642,36 +671,36 @@ At nonce
 			pcrnn = 0000...
 		incremental:
 			pcrnn = previous pcrnn
-				
+
 At quote
 	machines update
 
 		if quoteverified
 			boottime
 			if logverified
-				imapcr  
+				imapcr
 				imaevents
 				if storePcrWhiteList	(first time)
 					pcrnn
 				imaevents	0
 				imapcr		00...00
-				
+
 	atestlog update
 		quote
-		quoteverified 
+		quoteverified
 		if quoteverified
 			logverified
-			imaver 
+			imaver
 			if logverified
-				logentries 
+				logentries
 				pcrnn
 				if !storePcrWhiteList	(not first time)
-					pcrinvalid 
+					pcrinvalid
 				pcrchanged
 				imasigver
-				
+
 	bioslog
-		if quoteverified and logverified 
+		if quoteverified and logverified
 			(for each event)
 			hostname
 			timestamp
@@ -682,7 +711,7 @@ At quote
 			pcrsha256
 			eventtype
 			event
-	
+
 	imalog
 		if quoteverified and logverified
 			(for each event)
