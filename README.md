@@ -77,7 +77,7 @@ Install these packages.
 * mysql-devel
 * php
 * php-devel
-* php-mysql
+* php-mysql or php-mysqlnd
 
 ```
 # service mysqld start
@@ -108,6 +108,8 @@ Install these packages.
 Install these packages.
 
 * apache2
+* mysql-server 
+* libmysqlclient-dev
 * php
 * php5-dev
 * php-mysql
@@ -120,10 +122,20 @@ Install the Database Schema at the attestation **server**
 As **root**
 
 ```
+# /etc/init.d/apache2 start
+
 # mysql
 mysql> create database tpm2;
 mysql> grant all privileges on tpm2.* to ''@'localhost';
 ```
+
+For the error "Can't find any matching row in the user table"
+
+```
+mysql> grant all privileges on tpm2.* to ''@'localhost' identified by '';
+```
+
+
 As **non-root**
 
 ```
