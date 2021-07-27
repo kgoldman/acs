@@ -72,6 +72,8 @@ For the attestation server
 libjson-c3
 libjson-c-dev
 apache2
+mariadb-server
+libmysqlclient-dev
 php
 php5-dev
 php-mysql

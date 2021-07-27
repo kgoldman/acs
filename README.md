@@ -108,7 +108,7 @@ Install these packages.
 Install these packages.
 
 * apache2
-* mysql-server 
+* mariadb-server 
 * libmysqlclient-dev
 * php
 * php5-dev
