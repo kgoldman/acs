@@ -3,9 +3,8 @@
 /*			TPM 2.0 Attestation - Server 				*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: server.c 1669 2021-05-21 22:19:52Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2015 - 2020					*/
+/* (c) Copyright IBM Corporation 2015 - 2022					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -226,17 +225,6 @@ static uint32_t generateCredentialBlob(char **credentialBlobString,
 static uint32_t processEnrollCert(unsigned char **rspBuffer,
 				  uint32_t *rspLength,
 				  json_object *cmdJson);
-#ifdef ACS_UNSEAL
-static uint32_t processUnsealAuth(unsigned char **rspBuffer,
-				  uint32_t *rspLength,
-				  json_object *cmdJson);
-static uint32_t pcrStringToBin(unsigned char **pcrsSha1Bin,
-			       size_t *pcrsSha1BinSize,
-			       unsigned char **pcrsSha256Bin,
-			       size_t *pcrsSha256BinSize,
-			       const char *pcrsSha1String[],
-			       const char *pcrsSha256String[]);
-#endif
 static uint32_t makecredential(TSS_CONTEXT *tssContext,
 			       TPM2B_ID_OBJECT *credentialBlob,
 			       TPM2B_ENCRYPTED_SECRET *secret,
@@ -335,7 +323,7 @@ int verbose = 0;
 unsigned int 	imaKeyCount = 0;
 const char 	*imaCertFilename[IMA_KEYS_MAX];
 uint8_t 	imaFingerprint[IMA_KEYS_MAX][4];
-RSA		*imaRsaPkey[IMA_KEYS_MAX];
+void		*imaRsaPkey[IMA_KEYS_MAX];
 
 int main(int argc, char *argv[])
 {
@@ -410,7 +398,8 @@ int main(int argc, char *argv[])
 			    imaKeyNumber, imaCertFilename[imaKeyNumber]);
 	/* extract openssl format IMA public key from the IMA certificate */
 	if (rc == 0) {
-	    rc = getPubkeyFromDerCertFile(&imaRsaPkey[imaKeyNumber], &imaX509,
+	    rc = getPubkeyFromDerCertFile(&imaRsaPkey[imaKeyNumber],	/* freed FIXME */
+					  &imaX509,
 					  imaCertFilename[imaKeyNumber]);
 	}
 	/* get the fingerprint, the X509 certificate Subject Key Identifier last 4 bytes  for IMA */
@@ -442,14 +431,14 @@ int main(int argc, char *argv[])
     }
     /* server main loop */
     while (1) {
-	int connection_fd = -1;	
+	int connection_fd = -1;					/* disconnect @3 */
 	unsigned char *cmdBuffer = NULL; 		  	/* command stream */
 	uint32_t cmdLength;
 	unsigned char *rspBuffer = NULL; 		  	/* command stream */
 	uint32_t rspLength;
 
 	if (rc == 0) {
-	    rc = Socket_Connect(&connection_fd, sock_fd);
+	    rc = Socket_Connect(&connection_fd, sock_fd);	/* disconnect @3 */
 	}
 	if (rc == 0) {
 	    rc = Socket_Read(connection_fd,        	/* read/write file descriptor */
@@ -480,7 +469,7 @@ int main(int argc, char *argv[])
 	if (!((rc >= ASE_ERROR_FIRST) && (rc <= ASE_ERROR_LAST))) {
 	    rc = 0;	/* client errors should not */
 	}
-	Socket_Disconnect(&connection_fd);
+	Socket_Disconnect(&connection_fd);	/* @3 */
 	free(cmdBuffer);			/* @1 */
 	cmdBuffer = NULL;
 	free(rspBuffer);			/* @2 */
@@ -567,15 +556,6 @@ static uint32_t processRequest(unsigned char **rspBuffer,	/* freed by caller */
 				   rspLength,
 				   cmdJson);
 	}
-#ifdef ACS_UNSEAL
-	/* unseal authorization */
-	else if (strcmp(commandString, "unsealauth") == 0) {
-	    if (vverbose) printf("processRequest: processing unsealauth\n");
-	    rc = processUnsealAuth(rspBuffer,		/* freed by caller */
-				   rspLength,
-				   cmdJson);
-	} 
-#endif
 	/* if the client sent an unknown command, send this response These is a client errors that
 	   should not abort the server.*/
 	else {
@@ -1860,66 +1840,6 @@ static uint32_t pcrBinToString(char *pcrsString[],	/* freed by caller */
     return rc;
 }
 
-#ifdef ACS_UNSEAL
-
-/* pcrStringToBin() converts the PCRs as hexascii strings to binary.  Null strings set the binary to
-   0.
-
-   The strings typically come from either the database or json.
-*/
-
-static uint32_t pcrStringToBin(unsigned char **pcrsSha1Bin,	/* freed by the caller */
-			       size_t *pcrsSha1BinSize,
-			       unsigned char **pcrsSha256Bin, 	/* freed by the caller */
-			       size_t *pcrsSha256BinSize,
-			       const char *pcrsSha1String[],
-			       const char *pcrsSha256String[])
-{
-    uint32_t  		rc = 0;
-    /* NULL the pointers for the free */
-    uint32_t pcrNum;
-    for (pcrNum = 0 ; pcrNum < IMPLEMENTATION_PCR ; pcrNum++) {
-	pcrsSha1Bin[pcrNum] = NULL;
-	pcrsSha256Bin[pcrNum] = NULL;
-    }
-    /* get all PCRs from the strings */
-    for (pcrNum = 0 ; pcrNum < IMPLEMENTATION_PCR ; pcrNum++) {
-	/* text to binary */
-	if (pcrsSha1String[pcrNum] != NULL) {
-	    if (rc == 0) {
-		rc = Array_Scan(&pcrsSha1Bin[pcrNum],	/* output binary, freed by caller */
-				&pcrsSha1BinSize[pcrNum],
-				pcrsSha1String[pcrNum]);	/* input string */
-	    }
-	    if (rc == 0) {
-		if (pcrsSha1BinSize[pcrNum] != SHA1_DIGEST_SIZE) {
-		    printf("ERROR: pcrStringToBin: PCR %u size %lu not SHA-1\n",
-			   pcrNum, (unsigned long)pcrsSha1BinSize[pcrNum]);  
-		    rc = ACE_PCR_LENGTH;
-		}
-	    }
-	}
-	if (pcrsSha256String[pcrNum] != NULL) {
-	    if (rc == 0) {
-		rc = Array_Scan(&pcrsSha256Bin[pcrNum],	/* output binary, freed by the caller */
-				&pcrsSha256BinSize[pcrNum],
-				pcrsSha256String[pcrNum]);	/* input string */
-	    }
-	    if (rc == 0) {
-		if (pcrsSha256BinSize[pcrNum] != SHA256_DIGEST_SIZE) {
-		    printf("ERROR: pcrStringToBin: client PCR %u size %lu not SHA-256\n",
-			   pcrNum, (unsigned long)pcrsSha256BinSize[pcrNum]);  
-		    rc = ACE_PCR_LENGTH;
-		}
-	    }
-	}
-    }
-    return rc;
-}
-
-#endif	/* ACS_UNSEAL */
-
-
 /* makePcrStream20() concatenates the selected PCRs into a stream. pcrBinStream must be large enough
    to hold the stream.
 
@@ -3188,7 +3108,9 @@ static uint32_t verifyQuoteSignatureRSA(unsigned int 	*quoteVerified,		/* result
 {
     uint32_t 	rc = 0;
     int		irc;
-    RSA  	*rsaPkey = NULL;
+    /* For Openssl < 3, rsaKey is an RSA structure. */
+    /* For Openssl 3, rsaKey is an EVP_PKEY. */
+    void	*rsaPkey = NULL;
     
     /* extract the RSA key token from the X509 certificate */
     if (rc == 0) {
@@ -3212,9 +3134,7 @@ static uint32_t verifyQuoteSignatureRSA(unsigned int 	*quoteVerified,		/* result
 	    if (verbose) printf("INFO: verifyQuoteSignatureRSA: quote signature verified\n");
 	}
     }
-    if (rsaPkey != NULL) {
-	RSA_free(rsaPkey);		/* @2 */
-    }
+    TSS_RsaFree(rsaPkey);		/* @2 */
     return rc;
 }
 
@@ -3851,7 +3771,7 @@ static uint32_t processBiosEntries20Pass2(const char *hostname,
 	    }
 	    /* guess whether it's printable */
 	    if (isprint(eventPtr[0]) && isprint(eventPtr[1])) {
-		snprintf(eventString, length, "%.*s", length, eventPtr);
+		snprintf(eventString, sizeof(eventString), "%.*s", length, eventPtr);
 		/* FIXME factor this for all sql inserts, escape single quotes */
 		if (rc == 0) {
 		    size_t len = strlen(eventString) +1; 
@@ -3884,6 +3804,9 @@ static uint32_t processBiosEntries20Pass2(const char *hostname,
 	    length = strlen(entryString);
 	    if (length > ACS_JSON_EVENT_DBMAX) {
 		entryString[ACS_JSON_EVENT_DBMAX] = '\0';
+	    }
+	    if (length > 511) {		/* FIXME coordinate with the DB schema */
+		entryString[511] = '\0';
 	    }
 	    length = strlen(eventString);
 	    if (length > ACS_JSON_EVENT_DBMAX) {
@@ -3999,7 +3922,7 @@ static uint32_t processBiosEntries12Pass2(const char *hostname,
 		else {
 		    length = sizeof(eventString);	/* truncate */
 		}
-		snprintf(eventString, length, "%.*s", length, event.event);
+		snprintf(eventString, sizeof(eventString), "%.*s", length, event.event);
 	    }
 	    /* some events are not printable */
 	    else {
@@ -4943,331 +4866,6 @@ static uint32_t processEnrollCert(unsigned char **rspBuffer,
     free(attestCertBin);		/* @7 */
     return rc;
 }
-
-#ifdef ACS_UNSEAL
-
-/* processUnsealAuth() handles the client request for an unseal authorization.  It uses the PCR
-   white list as the valid PCRs.
-
-   The client command is of the form:
-   
-   {
-   "command":"unsealauth",
-   "hostname":"cainl.watson.ibm.com"
-   }
-
-   The response to the client is of the form:
-
-   "response":"unsealauth",
-   "pcrselect":"00000002000b03ff0400000403000000",
-   "approvedpolicy":"000b....",
-   "signature":0014000b0100...."
-*/
-
-static uint32_t processUnsealAuth(unsigned char **rspBuffer,
-				  uint32_t *rspLength,
-				  json_object *cmdJson)
-{
-    uint32_t  	rc = 0;		/* server error, should never occur, aborts processing */
-    int		irc;
-
-    if (vverbose) printf("INFO: processUnsealAuth: Entry\n");
-    /* get the client machine name from the command */
-    const char *hostname = NULL;
-    if (rc == 0) {
-	rc = JS_ObjectGetString(&hostname, "hostname", ACS_JSON_HOSTNAME_MAX, cmdJson);
-    }
-    /* read PCR white list from machines table.  For the demo, use PCRs from the first
-       attestation as the white list */
-    MYSQL_RES 		*machineResult = NULL;
-    const char 		*pcrsSha1String[IMPLEMENTATION_PCR];
-    const char 		*pcrsString[IMPLEMENTATION_PCR];
-   /* connect to the db */
-    MYSQL *mysql = NULL;
-    if (rc == 0) {
-	rc = SQ_Connect(&mysql);			/* closed @1 */	
-    }
-    if (rc == 0) {
-	rc = SQ_GetFirstPcrs(pcrsString,
-			     &machineResult,		/* freed @2 */
-			     mysql,
-			     hostname);
-    }
-    /* no PCR white list, missing valid quote */
-    if (rc == 0) {
-	if (pcrsString[0] == NULL) {
-	    printf("ERROR: processUnsealAuth: hostname %s has not validated a quote\n",
-		   hostname);  
-	    rc = ACE_QUOTE_MISSING;
-	}
-    }
-    /*
-      calculate approvedPolicy - PolicyPCR || PCR Selection || digestTPM
-    */
-    TPML_PCR_SELECTION 	pcrSelection;
-    uint8_t		*pcrSelectionBin = NULL;
-    uint16_t		pcrSelectionBinLen;
-    if (rc == 0) {
-	/* get the PCR selection, use the same one as for the quote, since those are the valid PCRs
-	   on the database */
-	makePcrSelect20(&pcrSelection);
-	/* marshal the TPML_PCR_SELECTION */
-	rc = TSS_Structure_Marshal(&pcrSelectionBin,		/* freed @3 */
-				   &pcrSelectionBinLen,
-				   &pcrSelection,
-				   (MarshalFunction_t)TSS_TPML_PCR_SELECTION_Marshal);
-    }
-    
-    /* convert the machines database PCRs from hexascii string to binary */
-    unsigned char *pcrsSha1Bin[IMPLEMENTATION_PCR];
-    size_t pcrsSha1BinSize[IMPLEMENTATION_PCR];
-    unsigned char *pcrsSha256Bin[IMPLEMENTATION_PCR];
-    size_t pcrsSha256BinSize[IMPLEMENTATION_PCR];
-    uint32_t pcrNum;
-    /* NULL the pointers for the free */
-    for (pcrNum = 0 ; pcrNum < IMPLEMENTATION_PCR ; pcrNum++) {
-	pcrsSha1Bin[pcrNum] = NULL;
-	pcrsSha256Bin[pcrNum] = NULL;
-    }
-    if (rc == 0) {
-	rc = pcrStringToBin(pcrsSha1Bin,	/* freed @4 */
-			    pcrsSha1BinSize,
-			    pcrsSha256Bin, 	/* freed @5 */
-			    pcrsSha256BinSize,
-			    pcrsSha1String,
-			    pcrsString);
-    }
-    /* concatenate the PCRs into a stream */
-    unsigned char pcrBinStream[HASH_COUNT * IMPLEMENTATION_PCR * MAX_DIGEST_SIZE];
-    size_t pcrBinStreamSize = 0;
-    if (rc == 0) {
-	rc = makePcrStream20(pcrBinStream,
-			     &pcrBinStreamSize,
-			     pcrsSha256Bin,
-			     &pcrSelection);
-    }
-    if (rc == 0) {
-	if (vverbose) Array_Print(NULL, "processUnsealAuth: PCR stream", TRUE,
-				  pcrBinStream, pcrBinStreamSize);
-    }
-    /* hash the stream to construct the TPM2_PolicyPCR digestTPM */
-    TPMT_HA digestTPM;
-    if (rc == 0) {
-	digestTPM.hashAlg = TPM_ALG_SHA256;	/* algorithm of signing key */
-	rc = TSS_Hash_Generate(&digestTPM,
-			       pcrBinStreamSize, pcrBinStream,
-			       0, NULL);
-    }
-    /* calculate approvedPolicy, see TPM2_PolicyPCR() policyDigest calculation
-       
-       policyDigestnew := HpolicyAlg(policyDigestold || TPM_CC_PolicyCommandCode || code)
-       policyDigestnew := HpolicyAlg(policyDigestold || TPM_CC_PolicyPCR || pcrs || digestTPM)
-    */
-    TPMT_HA approvedPolicy;
-    /* Policy Command Code */
-    if (rc == 0) {
-	approvedPolicy.hashAlg = TPM_ALG_SHA256;	/* algorithm of signing key */
-	/* policyDigestold is all zero */
-	memset((uint8_t *)&approvedPolicy.digest.sha256, 0, SHA256_DIGEST_SIZE);
-
-	TPM_CC commandCodeNbo = htonl(TPM_CC_Unseal);
-	TPM_CC policyCommandCodeNbo = htonl(TPM_CC_PolicyCommandCode);
-	if (vverbose) {
-	    Array_Print(NULL, "processUnsealAuth: policyDigestold", TRUE,
-			approvedPolicy.digest.sha256, SHA256_DIGEST_SIZE);
-	    Array_Print(NULL, "processUnsealAuth: policyCommandCodeNbo ", TRUE,
-			(uint8_t *)&policyCommandCodeNbo, sizeof(TPM_CC));
-	    Array_Print(NULL, "processUnsealAuth: commandCodeNbo ", TRUE,
-			(uint8_t *)&commandCodeNbo, sizeof(TPM_CC));
-	}
-	rc = TSS_Hash_Generate(&approvedPolicy,
-			       SHA256_DIGEST_SIZE, approvedPolicy.digest.sha256, /* old */
-			       sizeof(TPM_CC), &policyCommandCodeNbo , 	/* TPM_CC_PolicyCommandCode*/
-			       sizeof(TPM_CC), &commandCodeNbo, 	/* TPM_CC_Unseal */
-			       0, NULL);
-    }
-    if (rc == 0) {
-	if (vverbose) Array_Print(NULL, "processUnsealAuth: approvedPolicy intermediate", TRUE,
-				  approvedPolicy.digest.sha256, SHA256_DIGEST_SIZE);
-    }
-    /* Policy PCR */
-    if (rc == 0) {
-	TPM_CC commandCodeNbo = htonl(TPM_CC_PolicyPCR);
-
-	if (vverbose) {
-	    Array_Print(NULL, "processUnsealAuth: policyDigestold", TRUE,
-			approvedPolicy.digest.sha256, SHA256_DIGEST_SIZE);
-	    Array_Print(NULL, "processUnsealAuth: commandCodeNbo", TRUE,
-			(uint8_t *)&commandCodeNbo, sizeof(TPM_CC));
-	    Array_Print(NULL, "processUnsealAuth: pcrs", TRUE,
-			pcrSelectionBin, pcrSelectionBinLen);
-	    Array_Print(NULL, "processUnsealAuth: digestTPM", TRUE,
-			digestTPM.digest.sha256, SHA256_DIGEST_SIZE);
-	}
-	rc = TSS_Hash_Generate(&approvedPolicy,
-			       SHA256_DIGEST_SIZE, approvedPolicy.digest.sha256, /* old */
-			       sizeof(TPM_CC), &commandCodeNbo, 	/* TPM_CC_PolicyPCR */
-			       pcrSelectionBinLen, pcrSelectionBin,	/* pcrs selection */
-			       SHA256_DIGEST_SIZE, digestTPM.digest.sha256, 	/* digestTPM */
-			       0, NULL);
-    }
-    if (rc == 0) {
-	if (vverbose) Array_Print(NULL, "processUnsealAuth: approvedPolicy", TRUE,
-				  approvedPolicy.digest.sha256, SHA256_DIGEST_SIZE);
-    }
-    /* calculate aHash, see TPM2_PolicyAuthorize()
-
-       aHash := HaHashAlg(approvedPolicy || policyRef)
-     */
-    TPMT_HA aHash;
-    if (rc == 0) {
-	aHash.hashAlg = TPM_ALG_SHA256;		/* algorithm of signing key */
-	rc = TSS_Hash_Generate(&aHash,
-			       SHA256_DIGEST_SIZE, approvedPolicy.digest.sha256,
-			       0, NULL,		/* Empty policyRef, would go here */
-			       0, NULL);
-    }
-    if (rc == 0) {
-	if (vverbose) Array_Print(NULL, "processUnsealAuth: aHash", TRUE,
-				  aHash.digest.sha256, SHA256_DIGEST_SIZE);
-    }
-    /*
-      sign aHash
-    */
-    /* get TPM2_PolicyAuthorize authorization signing key AUTH_KEY */
-    EVP_PKEY *authKey = NULL;
-    if (rc == 0) {
-	rc = convertPemToEvpPrivKey(&authKey,		/* freed @6 */
-				    AUTH_KEY,
-				    AUTH_KEY_PASSWORD);
-    }
-    EVP_PKEY_CTX *ctx = NULL;
-    if (rc == 0) {
-        ctx = EVP_PKEY_CTX_new(authKey, NULL);		/* freed @7 */
-	if (ctx == NULL) {
-	    printf("ERROR: processUnsealAuth: EVP_PKEY_CTX_new() failed\n");  
-	    rc = ASE_OUT_OF_MEMORY;
-	}
-    }
-    if (rc == 0) {
-	irc = EVP_PKEY_sign_init(ctx);
-	if (irc != 1) {
-	    printf("ERROR: processUnsealAuth: EVP_PKEY_sign_init() failed\n");  
-	    rc = ASE_OSSL_RSA;
-	}
-    }
-    if (rc == 0) {
-	irc = EVP_PKEY_CTX_set_rsa_padding(ctx, RSA_PKCS1_PADDING);
-	if (irc != 1) {
-	    printf("ERROR: processUnsealAuth: EVP_PKEY_CTX_set_rsa_padding() failed\n");  
-	    rc = ASE_OSSL_RSA;
-	}
-    }
-    if (rc == 0) {
-	irc = EVP_PKEY_CTX_set_signature_md(ctx, EVP_sha256());
-	if (irc != 1) {
-	    printf("ERROR: processUnsealAuth: EVP_PKEY_CTX_set_signature_md() failed\n");  
-	    rc = ASE_OSSL_DIGEST;
-	}
-    }
-    /* construct TPMT_SIGNATURE */
-    TPMT_SIGNATURE tSignature;
-    tSignature.sigAlg = TPM_ALG_RSASSA;
-    tSignature.signature.rsassa.hash = TPM_ALG_SHA256;
-    /* sign aHash */
-    if (rc == 0) {
-	size_t siglen = MAX_RSA_KEY_BYTES;
-	irc = EVP_PKEY_sign(ctx,
-			    tSignature.signature.rsassa.sig.t.buffer, &siglen,
-			    aHash.digest.sha256, SHA256_DIGEST_SIZE);
-	if (irc != 1) {
-	}
-	else {
-	    tSignature.signature.rsassa.sig.t.size = siglen;
-	}
-    }
-    if (rc == 0) {
-	if (vverbose) Array_Print(NULL, "processUnsealAuth: signature", TRUE,
-				  tSignature.signature.rsassa.sig.t.buffer,
-				  tSignature.signature.rsassa.sig.t.size);
-    }
-    /* TPMT_SIGNATURE to hexascii */
-    char *tSignatureString = NULL;
-    if (rc == 0) {
-	rc = Structure_Print(&tSignatureString,		/* freed @8 */
-			     &tSignature,
-			     (MarshalFunction_t)TSS_TPMT_SIGNATURE_Marshal);
-    }
-    /* TPML_PCR_SELECTION to hexascii */
-    char *pcrSelectionString = NULL;
-    if (rc == 0) {
-	rc = Structure_Print(&pcrSelectionString,	/* freed @9 */
-			     &pcrSelection,
-			     (MarshalFunction_t)TSS_TPML_PCR_SELECTION_Marshal); 
-    }
-    /* convert approvedPolicy to hexascii */
-    char *approvedPolicyString = NULL;
-    if (rc == 0) {
-	rc = Structure_Print(&approvedPolicyString,	/* freed @10 */
-			     &approvedPolicy,
-			     (MarshalFunction_t)TSS_TPMT_HA_Marshal); 
-    }
-    /* create the unsealauth return json */
-    json_object *response = NULL;
-    uint32_t rc1 = JS_ObjectNew(&response);	/* freed @1 */
-    if (rc1 == 0) {
-	if (rc == 0) {
-	    json_object_object_add(response, "response",
-				   json_object_new_string("unsealauth"));
-	}
-	if (rc == 0) {
-	    json_object_object_add(response, "pcrselect",
-				   json_object_new_string(pcrSelectionString));
-	}
-	if (rc == 0) {
-	    json_object_object_add(response, "approvedpolicy",
-				   json_object_new_string(approvedPolicyString));
-	}
-	if (rc == 0) {
-	    json_object_object_add(response, "signature",
-				   json_object_new_string(tSignatureString));
-	}
-	/* processing error */
-	else {
-	    rc1 = JS_Rsp_AddError(response, rc);
-	}
-	if (rc1 == 0) {	
-	    rc = JS_ObjectSerialize(rspLength,
-				    (char **)rspBuffer,	/* freed by caller */
-				    response);		/* @1 */
- 	}
-    }
-    /* could not construct response */
-    else {
-	rc = rc1;
-    }
-    SQ_Close(mysql);			/* @1 */
-    SQ_FreeResult(machineResult);	/* @2 */
-    free(pcrSelectionBin);		/* @3 */
-    for (pcrNum = 0 ; pcrNum < IMPLEMENTATION_PCR ; pcrNum++) {
-	free(pcrsSha1Bin[pcrNum]);	/* @4 */
-    }
-    for (pcrNum = 0 ; pcrNum < IMPLEMENTATION_PCR ; pcrNum++) {
-	free(pcrsSha256Bin[pcrNum]);	/* @5 */
-    }
-    if (authKey != NULL) {
-	EVP_PKEY_free(authKey);		/* @6 */
-    }
-    if (ctx != NULL) {
-	EVP_PKEY_CTX_free(ctx);		/* @7 */
-    }
-    free(tSignatureString);		/* @8 */
-    free(pcrSelectionString);		/* @9 */
-    free(approvedPolicyString);		/* @10 */
-    return rc;
-}
-
-#endif
 
 /* validateEkCertificate() validates the EK certificate against the TPM vendor root.
 
