@@ -41,6 +41,7 @@
 #include <string.h>
 
 #include "commonerror.h"
+#include "commonutils.h"
 
 #include "commonjson.h"
 
