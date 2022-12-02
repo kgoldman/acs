@@ -476,7 +476,7 @@ int main(int argc, char *argv[])
 	    !connectionOnly && !nonceOnly && !optionalDemoOnly) {
 
 	    rc = Structure_Scan(&pcrSelection,
-				(UnmarshalFunction_t)TPML_PCR_SELECTION_Unmarshal,
+				(UnmarshalFunction_t)TSS_TPML_PCR_SELECTION_Unmarshalu,
 				pcrSelectString);
 	}
 	if ((rc == 0) && !connectionOnly && !nonceOnly && !optionalDemoOnly) {
@@ -779,7 +779,7 @@ static uint32_t createQuote(json_object **quoteResponseJson,	/* freed by caller 
 	rc = TSS_Structure_Marshal(&signatureBin,	/* freed @3 */
 				   &written,
 				   &signature,
-				   (MarshalFunction_t)TSS_TPMT_SIGNATURE_Marshal);
+				   (MarshalFunction_t)TSS_TPMT_SIGNATURE_Marshalu);
     }
     char *signatureString = NULL;
     if (rc == 0) {

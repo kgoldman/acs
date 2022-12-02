@@ -341,7 +341,7 @@ TPM_RC createAttestationKey(TSS_CONTEXT *tssContext,
 	rc = TSS_Structure_Marshal(attestPubBin,		/* freed by caller */
 				   attestPubLength,
 				   &out.outPublic.publicArea,
-				   (MarshalFunction_t)TSS_TPMT_PUBLIC_Marshal);
+				   (MarshalFunction_t)TSS_TPMT_PUBLIC_Marshalu);
     }
     /* return the attestation key structures */
     if (rc == 0) {

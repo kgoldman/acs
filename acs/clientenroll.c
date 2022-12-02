@@ -305,13 +305,13 @@ int main(int argc, char *argv[])
     /* if enrollment is successful, save the private key */
     if ((rc == 0) && !requestOnly) {
         rc = TSS_File_WriteStructure(&attestPriv,
-                                     (MarshalFunction_t)TSS_TPM2B_PRIVATE_Marshal,
+                                     (MarshalFunction_t)TSS_TPM2B_PRIVATE_Marshalu,
                                      akprivFullName);
     }
     /* if enrollment is successful, save the public key */
     if ((rc == 0) && !requestOnly) {
         rc = TSS_File_WriteStructure(&attestPub,
-                                     (MarshalFunction_t)TSS_TPM2B_PUBLIC_Marshal,
+                                     (MarshalFunction_t)TSS_TPM2B_PUBLIC_Marshalu,
                                      akpubFullName);
     }
     JS_ObjectFree(enrollResponseJson);		/* @1 */

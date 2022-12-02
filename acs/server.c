@@ -45,6 +45,7 @@
 
 #include <arpa/inet.h>
 
+#if 0
 #include <openssl/rand.h>
 #include <openssl/sha.h>
 #include <openssl/rsa.h>
@@ -53,6 +54,7 @@
 #include <openssl/x509.h>
 #include <openssl/evp.h>
 
+#endif
 #include <mysql/mysql.h>
 
 #include <json/json.h>
@@ -152,8 +154,7 @@ static uint32_t verifyQuoteSignatureRSA(unsigned int 	*quoteVerified,
 					int 		sha256,
 					TPMT_HA 	*digest,
 					X509 		*x509,
-					uint16_t 	signatureSize,
-					uint8_t		*signature);
+					TPMT_SIGNATURE 	*tpmtSignature);
 static uint32_t verifyQuoteSignatureECC(unsigned int 	*quoteVerified,	
 					TPMT_HA 	*digest,
 					X509 		*x509,
@@ -251,7 +252,7 @@ uint32_t getImaPublicKeyIndex(uint32_t *noKey,
 			      int eventNum);
 uint32_t verifyImaSignature(uint32_t *badSig,
 			    const ImaTemplateData *imaTemplateData,
-			    RSA *rsaPkey,
+			    EVP_PKEY *evpPkey,
 			    int eventNum);
 
 /* Support for TPM 1.2 */
@@ -323,7 +324,7 @@ int verbose = 0;
 unsigned int 	imaKeyCount = 0;
 const char 	*imaCertFilename[IMA_KEYS_MAX];
 uint8_t 	imaFingerprint[IMA_KEYS_MAX][4];
-void		*imaRsaPkey[IMA_KEYS_MAX];
+EVP_PKEY	*imaRsaPkey[IMA_KEYS_MAX];
 
 int main(int argc, char *argv[])
 {
@@ -386,8 +387,6 @@ int main(int argc, char *argv[])
 	printf("\nERROR: -root is required\n");
 	printUsage();
     }
-    OpenSSL_add_all_algorithms();
-    ERR_load_crypto_strings();
     time_t  start_time = time(NULL);
     printf("main: Starting server at %s", ctime(&start_time));
     /* initialize the IMA public key store with the IMA certificates and the fingerprints */
@@ -398,9 +397,9 @@ int main(int argc, char *argv[])
 			    imaKeyNumber, imaCertFilename[imaKeyNumber]);
 	/* extract openssl format IMA public key from the IMA certificate */
 	if (rc == 0) {
-	    rc = getPubkeyFromDerCertFile(&imaRsaPkey[imaKeyNumber],	/* freed FIXME */
-					  &imaX509,
-					  imaCertFilename[imaKeyNumber]);
+	    rc = getPubkeyFromDerCertFile3(&imaRsaPkey[imaKeyNumber],	/* freed FIXME */
+					   &imaX509,			/* freed @2 */
+					   imaCertFilename[imaKeyNumber]);
 	}
 	/* get the fingerprint, the X509 certificate Subject Key Identifier last 4 bytes  for IMA */
 	if (rc == 0) {
@@ -408,7 +407,7 @@ int main(int argc, char *argv[])
 				      sizeof(imaFingerprint[imaKeyNumber]), imaX509);
 	}
 	if (imaX509 != NULL) {
-	    X509_free(imaX509);
+	    X509_free(imaX509);		/* @2 */
 	}
     }
     for (imaKeyNumber = 0 ; vverbose && (rc == 0) && (imaKeyNumber < imaKeyCount) ; imaKeyNumber++) {
@@ -799,7 +798,7 @@ static uint32_t processNonce(unsigned char **rspBuffer,		/* freed by caller */
 	    makePcrSelect20(&pcrSelection);
 	    rc = Structure_Print(&pcrSelectionString,		/* freed @4 */
 				 &pcrSelection,
-				 (MarshalFunction_t)TSS_TPML_PCR_SELECTION_Marshal);
+				 (MarshalFunction_t)TSS_TPML_PCR_SELECTION_Marshalu);
 #ifdef TPM_TPM12
 	}
 	else {		/* TPM 1.2 */
@@ -2971,24 +2970,22 @@ static uint32_t verifyQuoteSignature(unsigned int 	*quoteVerified,		/* result */
     }
     X509 		*x509 = NULL;		/* public key */
     /* convert the quote verification PEM certificate to X509 */
-   if (rc == 0) {
+    if (rc == 0) {
 	rc = convertPemMemToX509(&x509,			/* freed @1 */
 				 akCertificatePem);
-   }
-   if (rc == 0) {
-       if (tpmtSignature->sigAlg == TPM_ALG_RSASSA) {
-	   if (rc == 0) {
-	       rc = verifyQuoteSignatureRSA(quoteVerified,	/* result */
-					    TRUE,		/* sha256 */
-					    &digest,
-					    x509,	    	/* public key */
-					    /* signature */
-					    tpmtSignature->signature.rsassa.sig.t.size,
-					    tpmtSignature->signature.rsassa.sig.t.buffer);
-	   }
-       }
-       else if (tpmtSignature->sigAlg == TPM_ALG_ECDSA) {
-	   if (rc == 0) {
+    }
+    if (rc == 0) {
+	if (tpmtSignature->sigAlg == TPM_ALG_RSASSA) {
+	    if (rc == 0) {
+		rc = verifyQuoteSignatureRSA(quoteVerified,	/* result */
+					     TRUE,		/* sha256 */
+					     &digest,
+					     x509,	    	/* public key */
+					     tpmtSignature);	/* signature */
+	    }
+	}
+	else if (tpmtSignature->sigAlg == TPM_ALG_ECDSA) {
+	    if (rc == 0) {
 	       rc = verifyQuoteSignatureECC(quoteVerified,		/* result */
 					    &digest,
 					    x509,			/* public key */
@@ -3103,38 +3100,38 @@ static uint32_t verifyQuoteSignatureRSA(unsigned int 	*quoteVerified,		/* result
 					int 		sha256,			/* boolean */
 					TPMT_HA 	*digest,		/* message */
 					X509 		*x509,			/* public key */
-					uint16_t 	signatureSize,
-					uint8_t		*signature)		/* signature */
+					TPMT_SIGNATURE 	*tpmtSignature)		/* signature */
 {
     uint32_t 	rc = 0;
-    int		irc;
-    /* For Openssl < 3, rsaKey is an RSA structure. */
-    /* For Openssl 3, rsaKey is an EVP_PKEY. */
-    void	*rsaPkey = NULL;
-    
-    /* extract the RSA key token from the X509 certificate */
+    EVP_PKEY 	*evpPkey = NULL;
+
     if (rc == 0) {
-	rc = getPubKeyFromX509Cert(&rsaPkey,			/* freed @2 */
-				   x509);
-    }
-    /* verify the quote signature against the hash of the TPM_QUOTE_INFO */
-    if (rc == 0) {
-	irc = RSA_verify((sha256 ? NID_sha256 : NID_sha1),
-			 (uint8_t *)&digest->digest,
-			 (sha256 ? SHA256_DIGEST_SIZE : SHA1_DIGEST_SIZE),
-			 signature, signatureSize,
-			 rsaPkey);
-	if (irc != 1) {		/* quote signature did not verify */
-	    rc = ACE_QUOTE_SIGNATURE;	/* skip reset of the tests */
-	    *quoteVerified = FALSE;	/* remains false */
-	    printf("ERROR: verifyQuoteSignatureRSA: Signature verification failed\n");
-	}
-	else {
-	    *quoteVerified = TRUE;	/* tentative */
-	    if (verbose) printf("INFO: verifyQuoteSignatureRSA: quote signature verified\n");
+	evpPkey = X509_get_pubkey(x509);	/* freed @1 */
+	if (evpPkey == NULL) {
+	    printf("ERROR: verifyQuoteSignatureRSA: X509_get_pubkey failed\n");  
+	    rc = ACE_OSSL_X509;
 	}
     }
-    TSS_RsaFree(rsaPkey);		/* @2 */
+    if (rc == 0) {
+	rc =  verifyRSASignatureFromEvpPubKey((uint8_t *)&digest->digest,
+					      (sha256 ? SHA256_DIGEST_SIZE : SHA1_DIGEST_SIZE),
+					      tpmtSignature,
+					      (sha256 ? TPM_ALG_SHA256 : TPM_ALG_SHA),
+					      evpPkey);
+	      if (rc != 0) {
+		  rc = ACE_QUOTE_SIGNATURE;	/* skip reset of the tests */
+		  *quoteVerified = FALSE;	/* remains false */
+		  printf("ERROR: verifyQuoteSignatureRSA: Signature verification failed\n");
+	      }
+	      else {
+		  *quoteVerified = TRUE;	/* tentative */
+		  if (verbose) printf("INFO: verifyQuoteSignatureRSA: quote signature verified\n");
+	      }
+    }
+    if (evpPkey != NULL) {
+	EVP_PKEY_free(evpPkey);		/* @1 */
+    }
+
     return rc;
 }
 
@@ -3149,53 +3146,21 @@ static uint32_t verifyQuoteSignatureECC(unsigned int 	*quoteVerified,		/* result
 					TPMT_SIGNATURE 	*tpmtSignature)		/* signature */
 {
     uint32_t 	rc = 0;
-    int irc;
-    EC_KEY *ecKey = NULL;
-    /* extract the EC key token from the X509 certificate */
+    EVP_PKEY *evpPkey = NULL;
+
     if (rc == 0) {
-	rc = convertX509ToEc(&ecKey,			/* freed @3 */
-			     x509);
-    }
-    /* construct the ECDSA_SIG signature token */
-    BIGNUM *r = NULL;
-    BIGNUM *s = NULL;
-    if (rc == 0) {
-	rc = convertBin2Bn(&r,			/* freed @4 */
-			   tpmtSignature->signature.ecdsa.signatureR.t.buffer,
-			   tpmtSignature->signature.ecdsa.signatureR.t.size);
-    }	
-    if (rc == 0) {
-	rc = convertBin2Bn(&s,			/* freed @4 */
-			   tpmtSignature->signature.ecdsa.signatureS.t.buffer,
-			   tpmtSignature->signature.ecdsa.signatureS.t.size);
-    }	
-    ECDSA_SIG *ecdsaSig;
-    if (rc == 0) {
-	ecdsaSig = ECDSA_SIG_new();			/* freed @4 */
-	if (ecdsaSig == NULL) {
-	    printf("ERROR: verifyQuoteSignatureECC: ECDSA_SIG_new() failed\n");  
-	    rc = ASE_OUT_OF_MEMORY;
+	evpPkey = X509_get_pubkey(x509);	/* freed @1 */
+	if (evpPkey == NULL) {
+	    printf("ERROR: verifyQuoteSignatureECC: X509_get_pubkey failed\n");  
+	    rc = ACE_OSSL_X509;
 	}
     }
     if (rc == 0) {
-#if OPENSSL_VERSION_NUMBER < 0x10100000
-	ecdsaSig->r = r;
-	ecdsaSig->s = s;
-#else
-	/* calling this function transfers the memory management of the values to the DSA_SIG
-	   object, and therefore the values that have been passed in should not be freed
-	   directly after this function has been called. */
-	irc = ECDSA_SIG_set0(ecdsaSig, r, s);
-	if (irc != 1) {
-	    printf("ERROR: verifyQuoteSignatureECC: ECDSA_SIG_set0() failed\n");  
-	    rc = ACE_OSSL_ECC;
-	}
-#endif
-    }
-    if (rc == 0) {
-	irc = ECDSA_do_verify((uint8_t *)&digest->digest, SHA256_DIGEST_SIZE, 
-			      ecdsaSig, ecKey);
-	if (irc != 1) {		/* quote signature did not verify */
+	rc = verifyEcSignatureFromEvpPubKey((uint8_t *)&digest->digest,
+					    SHA256_DIGEST_SIZE,
+					    tpmtSignature,
+					    evpPkey);
+	if (rc != 0) {
 	    rc = ACE_QUOTE_SIGNATURE;	/* skip reset of the tests */
 	    *quoteVerified = FALSE;	/* remains false */
 	    printf("ERROR: verifyQuoteSignatureECC: Signature verification failed\n");
@@ -3205,11 +3170,8 @@ static uint32_t verifyQuoteSignatureECC(unsigned int 	*quoteVerified,		/* result
 	    if (verbose) printf("INFO: verifyQuoteSignatureECC: quote signature verified\n");
 	}
     }
-    if (ecKey != NULL) {
-	EC_KEY_free(ecKey);		/* @3 */
-    }
-    if (ecdsaSig != NULL) {
-	ECDSA_SIG_free(ecdsaSig);	/* @4 */
+    if (evpPkey != NULL) {
+	EVP_PKEY_free(evpPkey);		/* @1 */
     }
     return rc;
 }
@@ -4146,8 +4108,7 @@ static uint32_t processImaEntriesPass2(int *imasigver,
 	if ((rc == 0) && !badEvent && !noSig && !noKey) {
 	    rc = verifyImaSignature(&badSig,		/* verification return code */
 				    &imaTemplateData,	/* unmarshaled template data */
-				    imaRsaPkey[imaKeyNumber],	/* public key token, openssl
-								   format */
+				    imaRsaPkey[imaKeyNumber],	/* EVP_PKEY public key token */
 				    eventNum);	/* the current IMA event number */
 	}
 	if (badEvent || noSig || noKey || badSig) {
@@ -4580,7 +4541,7 @@ static uint32_t processEnrollRequest12(unsigned char **rspBuffer,
     if (rc == 0) {
 	rc = Structure_Print(&attestPubString20, 		/* freed @10 */
 			     &attestPub20,
-			     (MarshalFunction_t)TSS_TPMT_PUBLIC_Marshal);
+			     (MarshalFunction_t)TSS_TPMT_PUBLIC_Marshalu);
     }
     TPM2B_DIGEST challenge;		/* symmetric key, use AES 256 */
     char *challengeString = NULL;
@@ -5311,13 +5272,13 @@ static uint32_t generateCredentialBlob(char **credentialBlobString,	/* freed by 
     if (rc == 0) {
 	rc = Structure_Print(credentialBlobString,	/* freed by caller */
 			     credentialBlob,
-			     (MarshalFunction_t)TSS_TPM2B_ID_OBJECT_Marshal);
+			     (MarshalFunction_t)TSS_TPM2B_ID_OBJECT_Marshalu);
     }
     /* secret to string */
     if (rc == 0) {
 	rc = Structure_Print(secretString,		/* freed by caller */
 			     secret,
-			     (MarshalFunction_t)TSS_TPM2B_ENCRYPTED_SECRET_Marshal);
+			     (MarshalFunction_t)TSS_TPM2B_ENCRYPTED_SECRET_Marshalu);
     }
     /* done with the EK */
     if (keyHandle != 0) {
@@ -5661,27 +5622,27 @@ uint32_t getImaPublicKeyIndex(uint32_t *noKey,
     return rc;
 }
 
-/* verifyImaSignature() verifies template data signature.
+/* verifyImaSignature() verifies the template data signature.
 
 */
 
 uint32_t verifyImaSignature(uint32_t *badSig,
 			    const ImaTemplateData *imaTemplateData,	/* unmarshaled template
 									   data */
-			    RSA  *rsaPkey,	/* public key token, openssl format */
+			    EVP_PKEY *evpPkey,	/* public key token, openssl format */
 			    int eventNum)	/* the current IMA event number being processed */
 {
-    uint32_t 	rc = 0;
-    int 	irc;
-    int		nid;	/* openssl algorithm identifier */
+    uint32_t 		rc = 0;
+    TPMI_ALG_HASH 	halg;
+    TPMT_SIGNATURE 	tSignature;
 
     if (rc == 0) {
 	switch (imaTemplateData->imaTemplateDNG.hashAlgId) {
 	  case TPM_ALG_SHA1:
-	    nid = NID_sha1;
+	    halg = TPM_ALG_SHA1;
 	    break;
 	  case TPM_ALG_SHA256:
-	    nid = NID_sha256;
+	    halg = TPM_ALG_SHA256;
 	    break;
 	  default:
 	    printf("ERROR: verifyImaSignature: Error, bad algorithm identifier %04hx, event %u\n",
@@ -5690,25 +5651,30 @@ uint32_t verifyImaSignature(uint32_t *badSig,
 	}
     }
     if (rc == 0) {
-	irc = RSA_verify(nid,
-			 imaTemplateData->imaTemplateDNG.fileDataHash,
-			 imaTemplateData->imaTemplateDNG.fileDataHashLength,
-			 imaTemplateData->imaTemplateSIG.signature,
-			 imaTemplateData->imaTemplateSIG.signatureSize,
-			 rsaPkey);
-	/* if signature verification fails, add an entry to the ima_log db badsig */
-	if (irc == 1) {
-	    if (verbose) printf("INFO: verifyImaSignature: signature verified, event %u\n",
-				eventNum);
-	    *badSig = FALSE;
-	}
-	else {
-	    printf("ERROR: verifyImaSignature: Error, signature did not verify, event %u\n",
-		   eventNum);
-	    *badSig = TRUE;
-	}
+	rc = convertRsaBinToTSignature(&tSignature,
+				       halg,
+				       imaTemplateData->imaTemplateSIG.signature,
+				       imaTemplateData->imaTemplateSIG.signatureSize);
     }
-    return rc;
+    if (rc == 0) {
+	rc = verifyRSASignatureFromRSA3(imaTemplateData->imaTemplateDNG.fileDataHash,
+					imaTemplateData->imaTemplateDNG.fileDataHashLength,
+					&tSignature,
+					halg,
+					evpPkey);
+    }
+    if (rc == 0) {
+	if (verbose) printf("INFO: verifyImaSignature: signature verified, event %u\n",
+				eventNum);
+	*badSig = FALSE;
+
+    }
+    else {
+	printf("ERROR: verifyImaSignature: Error, signature did not verify, event %u\n",
+	       eventNum);
+	*badSig = TRUE;
+    }
+    return 0;		/* always returns success, but sets badSig on failure */
 }
 
 /* getTimeStamp() reads the server machine time and converts to a timestamp string suitable for the
