@@ -244,7 +244,7 @@ static uint32_t Socket_ReceiveBytes(int sock_fd,
     nleft = nbytes;
     while (nleft > 0) {
 	nread = read(sock_fd, buffer, nleft);
-	if (nread <= 0) {       /* error */
+	if (nread < 0) {       /* error */
 	    printf("ERROR: Socket_ReceiveBytes: read error %d\n", nread);
 	    return -1;
 	}
