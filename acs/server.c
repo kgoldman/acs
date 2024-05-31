@@ -4994,37 +4994,64 @@ static uint32_t validateEkCertificate(TPMT_PUBLIC *ekPub,	/* output */
 				      vverbose);
     }
     if (rc == 0) {
-	/* FIXME sanity check modulusBytes !!! */
 	switch (ekCertIndex) {
 	  case EK_CERT_RSA_INDEX:
 	    getRsaTemplate(ekPub);
-	    memcpy(&ekPub->unique.rsa.t.buffer, modulusBin, modulusBytes);
+	    if (modulusBytes == 256) {
+		memcpy(&ekPub->unique.rsa.t.buffer, modulusBin, modulusBytes);
+	    }
+	    else {
+		printf("ERROR: validateEkCertificate: Public key modulus %u should be 256\n",
+		       modulusBytes);
+		rc = ACE_INVALID_CERT;
+	    }
 	    break;
 	  case EK_CERT_RSA_3072_INDEX_H6:
 	    getRsaHighTemplate(ekPub, ekCertIndex);
-	    memcpy(&ekPub->unique.rsa.t.buffer, modulusBin, modulusBytes);
+	    if (modulusBytes == 384) {
+		memcpy(&ekPub->unique.rsa.t.buffer, modulusBin, modulusBytes);
+	    }
+	    else {
+		printf("ERROR: validateEkCertificate: Public key modulus %u should be 384\n",
+		       modulusBytes);
+		rc = ACE_INVALID_CERT;
+	    }
 	    break;
 	  case EK_CERT_EC_INDEX:
 	    getEccTemplate(ekPub);
-	    ekPub->unique.ecc.x.t.size = 32;
-	    ekPub->unique.ecc.y.t.size = 32;
-	    memcpy(&ekPub->unique.ecc.x.t.buffer,
-		   modulusBin +1,
-		   ekPub->unique.ecc.x.t.size);
-	    memcpy(&ekPub->unique.ecc.y.t.buffer,
-		   modulusBin  +1 + ekPub->unique.ecc.x.t.size,
-		   ekPub->unique.ecc.y.t.size);
+	    if (modulusBytes != 65) {
+		printf("ERROR: validateEkCertificate: Public key modulus %u should be 65\n",
+		       modulusBytes);
+		rc = ACE_INVALID_CERT;
+	    }
+	    else {
+		ekPub->unique.ecc.x.t.size = 32;
+		ekPub->unique.ecc.y.t.size = 32;
+		memcpy(&ekPub->unique.ecc.x.t.buffer,
+		       modulusBin +1,
+		       ekPub->unique.ecc.x.t.size);
+		memcpy(&ekPub->unique.ecc.y.t.buffer,
+		       modulusBin  +1 + ekPub->unique.ecc.x.t.size,
+		       ekPub->unique.ecc.y.t.size);
+	    }
 	    break;
 	  case EK_CERT_ECC_NISTP384_INDEX_H3:
 	    getEccHighTemplate(ekPub, ekCertIndex);
-	    ekPub->unique.ecc.x.t.size = 48;
-	    ekPub->unique.ecc.y.t.size = 48;
-	    memcpy(&ekPub->unique.ecc.x.t.buffer,
-		   modulusBin +1,
-		   ekPub->unique.ecc.x.t.size);
-	    memcpy(&ekPub->unique.ecc.y.t.buffer,
-		   modulusBin  +1 + ekPub->unique.ecc.x.t.size,
-		   ekPub->unique.ecc.y.t.size);
+	    if (modulusBytes != 97) {
+		printf("ERROR: validateEkCertificate: Public key modulus %u should be 97\n",
+		       modulusBytes);
+		rc = ACE_INVALID_CERT;
+	    }
+	    else {
+		ekPub->unique.ecc.x.t.size = 48;
+		ekPub->unique.ecc.y.t.size = 48;
+		memcpy(&ekPub->unique.ecc.x.t.buffer,
+		       modulusBin +1,
+		       ekPub->unique.ecc.x.t.size);
+		memcpy(&ekPub->unique.ecc.y.t.buffer,
+		       modulusBin  +1 + ekPub->unique.ecc.x.t.size,
+		       ekPub->unique.ecc.y.t.size);
+	    }
 	    break;
 	}
     }
