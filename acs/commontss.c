@@ -3,9 +3,8 @@
 /*		TPM 2.0 Attestation - Common TSS Functions	  		*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: commontss.c 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016 - 2020.					*/
+/* (c) Copyright IBM Corporation 2016 - 2024.					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -63,7 +62,7 @@ TPM_RC getTpmVendor(TSS_CONTEXT *tssContext,
     TPM_RC 			rc = 0;
     GetCapability_In 		in;
     GetCapability_Out		out;
-    
+
     if (rc == 0) {
 	in.capability = TPM_CAP_TPM_PROPERTIES;
 	in.property = TPM_PT_MANUFACTURER;
@@ -71,7 +70,7 @@ TPM_RC getTpmVendor(TSS_CONTEXT *tssContext,
     }
     if (rc == 0) {
 	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&out, 
+			 (RESPONSE_PARAMETERS *)&out,
 			 (COMMAND_PARAMETERS *)&in,
 			 NULL,
 			 TPM_CC_GetCapability,
@@ -116,7 +115,7 @@ TPM_RC getCapSrk(TSS_CONTEXT 	*tssContext,
     }
     if (rc == 0) {
 	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&out, 
+			 (RESPONSE_PARAMETERS *)&out,
 			 (COMMAND_PARAMETERS *)&in,
 			 NULL,
 			 TPM_CC_GetCapability,
@@ -157,7 +156,7 @@ TPM_RC createSrk(TSS_CONTEXT 	*tssContext,
     TPM_RC			rc = 0;
     CreatePrimary_In 		in;
     CreatePrimary_Out 		out;
-    
+
     /* set up the createprimary in parameters */
     if (rc == 0) {
 	in.primaryHandle = TPM_RH_OWNER;
@@ -195,7 +194,7 @@ TPM_RC createSrk(TSS_CONTEXT 	*tssContext,
 			 TPM_CC_CreatePrimary,
 			 TPM_RS_PW, NULL, 0,
 			 TPM_RH_NULL, NULL, 0);
-    }	
+    }
     if (rc == 0) {
 	if (vverbose) printf("createSrk: Handle %08x\n", out.objectHandle);
 	*handle  = out.objectHandle;
@@ -230,7 +229,7 @@ TPM_RC persistSrk(TSS_CONTEXT 	*tssContext,
     /* call TSS to execute the command */
     if (rc == 0) {
 	rc = TSS_Execute(tssContext,
-			 NULL, 
+			 NULL,
 			 (COMMAND_PARAMETERS *)&in,
 			 NULL,
 			 TPM_CC_EvictControl,
@@ -264,7 +263,7 @@ TPM_RC createAttestationKey(TSS_CONTEXT *tssContext,
 			    TPM2B_PRIVATE *attestPriv,
 			    TPM2B_PUBLIC *attestPub,
 			    uint16_t *attestPubLength,
-			    unsigned char **attestPubBin)	/* freed by caller */	
+			    unsigned char **attestPubBin)	/* freed by caller */
 {
     TPM_RC 			rc = 0;
     Create_In 			in;
@@ -296,6 +295,16 @@ TPM_RC createAttestationKey(TSS_CONTEXT *tssContext,
 	    in.inPublic.publicArea.parameters.rsaDetail.exponent = 0;
 	    in.inPublic.publicArea.unique.rsa.t.size = 0;
 	}
+	else if (nvIndex == EK_CERT_RSA_3072_INDEX_H6) {
+	    in.inPublic.publicArea.type = TPM_ALG_RSA;
+	    in.inPublic.publicArea.parameters.rsaDetail.symmetric.algorithm = TPM_ALG_NULL;
+	    in.inPublic.publicArea.parameters.rsaDetail.scheme.scheme = TPM_ALG_RSASSA;
+	    in.inPublic.publicArea.parameters.rsaDetail.scheme.details.rsassa.hashAlg =
+		TPM_ALG_SHA256;
+	    in.inPublic.publicArea.parameters.rsaDetail.keyBits = 3072;
+	    in.inPublic.publicArea.parameters.rsaDetail.exponent = 0;
+	    in.inPublic.publicArea.unique.rsa.t.size = 0;
+	}
 	else if (nvIndex == EK_CERT_EC_INDEX) {
 	    in.inPublic.publicArea.type = TPM_ALG_ECC;
 	    in.inPublic.publicArea.parameters.eccDetail.symmetric.algorithm = TPM_ALG_NULL;
@@ -303,6 +312,17 @@ TPM_RC createAttestationKey(TSS_CONTEXT *tssContext,
 		TPM_ALG_SHA256;
 	    in.inPublic.publicArea.parameters.eccDetail.scheme.scheme = TPM_ALG_ECDSA;
 	    in.inPublic.publicArea.parameters.eccDetail.curveID = TPM_ECC_NIST_P256;
+	    in.inPublic.publicArea.parameters.eccDetail.kdf.scheme = TPM_ALG_NULL;
+	    in.inPublic.publicArea.unique.ecc.x.t.size = 0;
+	    in.inPublic.publicArea.unique.ecc.y.t.size = 0;
+	}
+	else if (nvIndex == EK_CERT_ECC_NISTP384_INDEX_H3) {
+	    in.inPublic.publicArea.type = TPM_ALG_ECC;
+	    in.inPublic.publicArea.parameters.eccDetail.symmetric.algorithm = TPM_ALG_NULL;
+	    in.inPublic.publicArea.parameters.eccDetail.scheme.details.ecdsa.hashAlg =
+		TPM_ALG_SHA256;
+	    in.inPublic.publicArea.parameters.eccDetail.scheme.scheme = TPM_ALG_ECDSA;
+	    in.inPublic.publicArea.parameters.eccDetail.curveID = TPM_ECC_NIST_P384;
 	    in.inPublic.publicArea.parameters.eccDetail.kdf.scheme = TPM_ALG_NULL;
 	    in.inPublic.publicArea.unique.ecc.x.t.size = 0;
 	    in.inPublic.publicArea.unique.ecc.y.t.size = 0;
@@ -403,7 +423,9 @@ TPM_RC loadObject(TSS_CONTEXT 	*tssContext,
 TPM_RC activatecredential(TSS_CONTEXT *tssContext,
 			  TPM2B_DIGEST *certInfo,
 			  TPM_HANDLE activateHandle,		/* loaded key */
-			  TPM_HANDLE keyHandle,			/* loaded EK */
+			  TPM_HANDLE ekKeyHandle,
+			  TPMI_RH_NV_INDEX ekCertIndex,
+			  TPMI_ALG_HASH  sessionHashAlg,
 			  unsigned char *credentialBlobBin,	/* marshaled */
 			  size_t credentialBlobBinSize,
 			  unsigned char *secretBin,		/* marshaled */
@@ -417,7 +439,7 @@ TPM_RC activatecredential(TSS_CONTEXT *tssContext,
 
     if (rc == 0) {
 	in.activateHandle = activateHandle;
-	in.keyHandle = keyHandle;
+	in.keyHandle = ekKeyHandle;
     }
     /* unmarshal the credential blob */
     if (rc == 0) {
@@ -434,11 +456,32 @@ TPM_RC activatecredential(TSS_CONTEXT *tssContext,
     /* using the EK requires a policy session */
     TPMI_SH_AUTH_SESSION 	sessionHandle;
     if (rc == 0) {
-	rc = makePolicySession(tssContext, &sessionHandle);
+	rc = makePolicySession(tssContext, &sessionHandle, sessionHashAlg);
     }
-    /* policy secret satisfies the policy session for the EK primary key */
+    if (rc == 0) {
+	if (vverbose) {
+	    rc = policyGetDigest(tssContext, sessionHandle);
+	}
+    }
+    /* policy secret satisfies the policy A session for the EK primary key */
     if (rc == 0) {
 	rc = policySecret(tssContext, sessionHandle);
+    }
+    if (rc == 0) {
+	if (vverbose) {
+	    rc = policyGetDigest(tssContext, sessionHandle);
+	}
+    }
+    /* for the low range, policy A is the policy.  For the high range, policy B must be added */
+    if (rc == 0) {
+	if (ekCertIndex >= 0x01c00012) {
+	    rc = policyB(tssContext, sessionHandle, sessionHashAlg);
+	}
+    }
+    if (rc == 0) {
+	if (vverbose) {
+	    rc = policyGetDigest(tssContext, sessionHandle);
+	}
     }
     /* call TSS to execute the command */
     if (rc == 0) {
@@ -468,14 +511,15 @@ TPM_RC activatecredential(TSS_CONTEXT *tssContext,
     }
     return rc;
 }
-		
+
 /* makePolicySession() makes a policy session that can be used as an EK authorization
 
    Returns the policy session handle.
 */
 
 TPM_RC makePolicySession(TSS_CONTEXT *tssContext,
-			 TPMI_SH_AUTH_SESSION *sessionHandle)
+			 TPMI_SH_AUTH_SESSION *sessionHandle,
+			 TPMI_ALG_HASH sessionHashAlg)
 {
     TPM_RC 			rc = 0;
     StartAuthSession_In 	startAuthSessionIn;
@@ -488,15 +532,15 @@ TPM_RC makePolicySession(TSS_CONTEXT *tssContext,
 	startAuthSessionIn.tpmKey = TPM_RH_NULL;
 	startAuthSessionIn.bind = TPM_RH_NULL;
 	startAuthSessionIn.symmetric.algorithm = TPM_ALG_XOR;
-	startAuthSessionIn.authHash = TPM_ALG_SHA256;
-	startAuthSessionIn.symmetric.keyBits.xorr = TPM_ALG_SHA256;
+	startAuthSessionIn.authHash = sessionHashAlg;
+	startAuthSessionIn.symmetric.keyBits.xorr = sessionHashAlg;
 	startAuthSessionIn.symmetric.mode.sym = TPM_ALG_NULL;
 	startAuthSessionExtra.bindPassword = NULL;
-    }   
+    }
     /* call TSS to execute the command */
     if (rc == 0) {
 	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&startAuthSessionOut, 
+			 (RESPONSE_PARAMETERS *)&startAuthSessionOut,
 			 (COMMAND_PARAMETERS *)&startAuthSessionIn,
 			 (EXTRA_PARAMETERS *)&startAuthSessionExtra,
 			 TPM_CC_StartAuthSession,
@@ -543,11 +587,11 @@ TPM_RC makeHmacSession(TSS_CONTEXT *tssContext,
 	startAuthSessionIn.symmetric.keyBits.xorr = TPM_ALG_SHA256;
 	startAuthSessionIn.symmetric.mode.sym = TPM_ALG_NULL;
 	startAuthSessionExtra.bindPassword = NULL;
-    }   
+    }
     /* call TSS to execute the command */
     if (rc == 0) {
 	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&startAuthSessionOut, 
+			 (RESPONSE_PARAMETERS *)&startAuthSessionOut,
 			 (COMMAND_PARAMETERS *)&startAuthSessionIn,
 			 (EXTRA_PARAMETERS *)&startAuthSessionExtra,
 			 TPM_CC_StartAuthSession,
@@ -582,7 +626,7 @@ TPM_RC policySecret(TSS_CONTEXT *tssContext,
     TPM_RC 			rc = 0;
     PolicySecret_In 		policySecretIn;
     PolicySecret_Out 		policySecretOut;
-    
+
     /* run policy secret over the endorsement auth to satisfy the policy */
     if (rc == 0) {
 	policySecretIn.authHandle = TPM_RH_ENDORSEMENT;
@@ -591,11 +635,11 @@ TPM_RC policySecret(TSS_CONTEXT *tssContext,
 	policySecretIn.cpHashA.b.size = 0;
 	policySecretIn.policyRef.b.size = 0;
 	policySecretIn.expiration = 0;
-    }   
+    }
     /* call TSS to execute the command */
     if (rc == 0) {
 	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&policySecretOut, 
+			 (RESPONSE_PARAMETERS *)&policySecretOut,
 			 (COMMAND_PARAMETERS *)&policySecretIn,
 			 NULL,
 			 TPM_CC_PolicySecret,
@@ -610,6 +654,94 @@ TPM_RC policySecret(TSS_CONTEXT *tssContext,
 	const char *submsg;
 	const char *num;
 	printf("ERROR: policySecret: TPM2_PolicySecret: failed, rc %08x\n", rc);
+	TSS_ResponseCode_toString(&msg, &submsg, &num, rc);
+	printf("%s%s%s\n", msg, submsg, num);
+	rc = EXIT_FAILURE;
+    }
+    return rc;
+}
+
+TPM_RC policyB(TSS_CONTEXT *tssContext,
+	       TPMI_SH_AUTH_SESSION sessionHandle,
+	       TPMI_ALG_HASH sessionHashAlg)
+{
+    TPM_RC 			rc = 0;
+    PolicyOR_In 		policyORIn;
+
+    /* FIXME Move to ekutils eventually */
+    /* Values are from the EK Credential specification */
+    uint8_t policyASha256[] =
+	{0x83, 0x71, 0x97, 0x67, 0x44, 0x84, 0xb3, 0xf8,
+	 0x1a, 0x90, 0xcc, 0x8d, 0x46, 0xa5, 0xd7, 0x24,
+	 0xfd, 0x52, 0xd7, 0x6e, 0x06, 0x52, 0x0b, 0x64,
+	 0xf2, 0xa1, 0xda, 0x1b, 0x33, 0x14, 0x69, 0xaa};
+    uint8_t policyASha384[] =
+	{0x8b, 0xbf, 0x22, 0x66, 0x53, 0x7c, 0x17, 0x1c,
+	 0xb5, 0x6e, 0x40, 0x3c, 0x4d, 0xc1, 0xd4, 0xb6,
+	 0x4f, 0x43, 0x26, 0x11, 0xdc, 0x38, 0x6e, 0x6f,
+	 0x53, 0x20, 0x50, 0xc3, 0x27, 0x8c, 0x93, 0x0e,
+	 0x14, 0x3e, 0x8b, 0xb1, 0x13, 0x38, 0x24, 0xcc,
+	 0xb4, 0x31, 0x05, 0x38, 0x71, 0xc6, 0xdb, 0x53};
+    uint8_t policyCSha256[] =
+	{0x37, 0x67, 0xe2, 0xed, 0xd4, 0x3f, 0xf4, 0x5a,
+	 0x3a, 0x7e, 0x1e, 0xae, 0xfc, 0xef, 0x78, 0x64,
+	 0x3d, 0xca, 0x96, 0x46, 0x32, 0xe7, 0xaa, 0xd8,
+	 0x2c, 0x67, 0x3a, 0x30, 0xd8, 0x63, 0x3f, 0xde};
+    uint8_t policyCSha384[] =
+	{0xd6, 0x03, 0x2c, 0xe6, 0x1f, 0x2f, 0xb3, 0xc2,
+	 0x40, 0xeb, 0x3c, 0xf6, 0xa3, 0x32, 0x37, 0xef,
+	 0x2b, 0x6a, 0x16, 0xf4, 0x29, 0x3c, 0x22, 0xb4,
+	 0x55, 0xe2, 0x61, 0xcf, 0xfd, 0x21, 0x7a, 0xd5,
+	 0xb4, 0x94, 0x7c, 0x2d, 0x73, 0xe6, 0x30, 0x05,
+	 0xee, 0xd2, 0xdc, 0x2b, 0x35, 0x93, 0xd1, 0x65};
+
+    /* run policy secret over the endorsement auth to satisfy the policy */
+    if (rc == 0) {
+	policyORIn.policySession = sessionHandle;
+	policyORIn.pHashList.count = 2;		/* policy A or policy C */
+	switch(sessionHashAlg) {
+	  case TPM_ALG_SHA256:
+	    memcpy(&policyORIn.pHashList.digests[0].b.buffer,
+		   policyASha256,
+		   sizeof(policyASha256));
+	    memcpy(&policyORIn.pHashList.digests[1].b.buffer,
+		   policyCSha256,
+		   sizeof(policyCSha256));
+	    policyORIn.pHashList.digests[0].b.size = sizeof(policyASha256);
+	    policyORIn.pHashList.digests[1].b.size = sizeof(policyCSha256);
+	    break;
+	  case TPM_ALG_SHA384:
+	    memcpy(&policyORIn.pHashList.digests[0].b.buffer,
+		   policyASha384,
+		   sizeof(policyASha384));
+	    memcpy(&policyORIn.pHashList.digests[1].b.buffer,
+		   policyCSha384,
+		   sizeof(policyCSha384));
+	    policyORIn.pHashList.digests[0].b.size = sizeof(policyASha384);
+	    policyORIn.pHashList.digests[1].b.size = sizeof(policyCSha384);
+	    break;
+	  default:
+	    if (verbose) printf("ERROR: policyB algorithm %04x not supported\n", sessionHashAlg);
+	    rc = TPM_RC_VALUE;
+	}
+    }
+    /* call TSS to execute the command */
+    if (rc == 0) {
+	rc = TSS_Execute(tssContext,
+			 NULL,
+			 (COMMAND_PARAMETERS *)&policyORIn,
+			 NULL,
+			 TPM_CC_PolicyOR,
+			 TPM_RH_NULL, NULL, 0);
+    }
+    if (rc == 0) {
+	if (vverbose) printf("policyB: TPM2_PolicyOr: success\n");
+    }
+    else {
+	const char *msg;
+	const char *submsg;
+	const char *num;
+	printf("ERROR: policyB: TPM2_PolicyOr: failed, rc %08x\n", rc);
 	TSS_ResponseCode_toString(&msg, &submsg, &num, rc);
 	printf("%s%s%s\n", msg, submsg, num);
 	rc = EXIT_FAILURE;
@@ -635,7 +767,7 @@ uint32_t signQuote(TSS_CONTEXT *tssContext,
     TPM_RC			rc = 0;
     Quote_In 			in;
     Quote_Out 			out;
-    
+
     if (rc == 0) {
 	/* Handle of key that will perform quoting */
 	in.signHandle = keyHandle;
@@ -643,7 +775,7 @@ uint32_t signQuote(TSS_CONTEXT *tssContext,
 	/* FIXME should really come from AK public */
 	if (type == TPM_ALG_RSA) {
 	    /* Table 145 - Definition of TPMT_SIG_SCHEME Structure */
-	    in.inScheme.scheme = TPM_ALG_RSASSA;	
+	    in.inScheme.scheme = TPM_ALG_RSASSA;
 	    /* Table 144 - Definition of TPMU_SIG_SCHEME Union <IN/OUT, S> */
 	    /* Table 142 - Definition of {RSA} Types for RSA Signature Schemes */
 	    /* Table 135 - Definition of TPMS_SCHEME_HASH Structure */
@@ -714,7 +846,7 @@ uint32_t getAuditDigest(TSS_CONTEXT *tssContext,
     TPM_RC			rc = 0;
     GetSessionAuditDigest_In 	in;
     GetSessionAuditDigest_Out	out;
-    
+
     if (rc == 0) {
 	/* Handle of key that will perform quoting */
 	in.privacyAdminHandle = TPM_RH_ENDORSEMENT;
@@ -724,7 +856,7 @@ uint32_t getAuditDigest(TSS_CONTEXT *tssContext,
 	/* FIXME should really come from AK public */
 	if (type == TPM_ALG_RSA) {
 	    /* Table 145 - Definition of TPMT_SIG_SCHEME Structure */
-	    in.inScheme.scheme = TPM_ALG_RSASSA;	
+	    in.inScheme.scheme = TPM_ALG_RSASSA;
 	    /* Table 144 - Definition of TPMU_SIG_SCHEME Union <IN/OUT, S> */
 	    /* Table 142 - Definition of {RSA} Types for RSA Signature Schemes */
 	    /* Table 135 - Definition of TPMS_SCHEME_HASH Structure */
@@ -901,12 +1033,12 @@ uint32_t readPcrsA(TSS_CONTEXT *tssContext,
     /* iterate through each bank */
     for (bank = 0 ; (rc == 0) && (bank < inPcrSelection->count) ; bank++) {
 	int foundPCR = FALSE;	/* a PCR is selected in this bank */
-	in.pcrSelectionIn.pcrSelections[0].sizeofSelect = 
+	in.pcrSelectionIn.pcrSelections[0].sizeofSelect =
 	    inPcrSelection->pcrSelections[bank].sizeofSelect;	/* should be 3 */
 	in.pcrSelectionIn.pcrSelections[0].hash =
 	    inPcrSelection->pcrSelections[bank].hash;
 	outPcrBanks->pcrBank[pcrBank].hash = inPcrSelection->pcrSelections[bank].hash;
-	
+
 	/* iterate through each select byte */
 	for (selectByte = 0, pcrNum = 0 ; selectByte < (IMPLEMENTATION_PCR/8) ; selectByte++) {
 
@@ -979,7 +1111,7 @@ uint32_t readPcrsA(TSS_CONTEXT *tssContext,
 						NULL,		/* nonce */
 						0);		/* nonce length */
 			}
-		    }	     
+		    }
 		}
 		else {	/* if PCR not selected, mark the PCR response empty */
 		    outPcrBanks->pcrBank[pcrBank].digests[pcrNum].t.size = 0;
@@ -1008,7 +1140,7 @@ TPM_RC flushContext(TSS_CONTEXT *tssContext,
     /* call TSS to execute the command */
     if (rc == 0) {
 	rc = TSS_Execute(tssContext,
-			 NULL, 
+			 NULL,
 			 (COMMAND_PARAMETERS *)&in,
 			 NULL,
 			 TPM_CC_FlushContext,
@@ -1045,7 +1177,7 @@ TPM_RC policyPCR(TSS_CONTEXT 		*tssContext,
     /* call TSS to execute the command */
     if (rc == 0) {
 	rc = TSS_Execute(tssContext,
-			 NULL, 
+			 NULL,
 			 (COMMAND_PARAMETERS *)&in,
 			 NULL,
 			 TPM_CC_PolicyPCR,
@@ -1081,12 +1213,12 @@ TPM_RC policyCommandCode(TSS_CONTEXT 		*tssContext,
     /* call TSS to execute the command */
     if (rc == 0) {
 	rc = TSS_Execute(tssContext,
-			 NULL, 
+			 NULL,
 			 (COMMAND_PARAMETERS *)&policyCommandCodeIn,
 			 NULL,
 			 TPM_CC_PolicyCommandCode,
 			 TPM_RH_NULL, NULL, 0);
-    } 
+    }
     if (rc == 0) {
 	if (vverbose) printf("policyCommandCode: success\n");
     }
@@ -1216,7 +1348,7 @@ uint32_t policyAuthorize(TSS_CONTEXT 		*tssContext,
     /* call TSS to execute the command */
     if (rc == 0) {
 	rc = TSS_Execute(tssContext,
-			 NULL, 
+			 NULL,
 			 (COMMAND_PARAMETERS *)&policyAuthorizeIn,
 			 NULL,
 			 TPM_CC_PolicyAuthorize,
@@ -1249,7 +1381,7 @@ uint32_t policyGetDigest(TSS_CONTEXT *tssContext,
     /* call TSS to execute the command */
     if (rc == 0) {
 	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&policyGetDigestOut, 
+			 (RESPONSE_PARAMETERS *)&policyGetDigestOut,
 			 (COMMAND_PARAMETERS *)&policyGetDigestIn,
 			 NULL,
 			 TPM_CC_PolicyGetDigest,
@@ -1271,4 +1403,3 @@ uint32_t policyGetDigest(TSS_CONTEXT *tssContext,
     }
     return rc;
 }
-

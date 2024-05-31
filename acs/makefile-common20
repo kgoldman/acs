@@ -41,6 +41,7 @@ CC = /usr/bin/gcc
 # clients and server
 
 CCFLAGS +=  -Wall -W -Wmissing-declarations -Wmissing-prototypes -Wnested-externs \
+		-Wno-deprecated-declarations \
 		-c -ggdb -O0 -DUNIX -DTPM_POSIX					\
 		-I../utils							\
 		-DTPM_TPM20

@@ -3,9 +3,8 @@
 /*		TPM 2.0 Attestation - Client Side Enrollment			*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: clientenroll.c 1475 2019-05-08 19:20:24Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016 - 2019					*/
+/* (c) Copyright IBM Corporation 2016 - 2024					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -112,6 +111,8 @@ int main(int argc, char *argv[])
     int			i;    /* argc iterator */
     /* command line argument defaults */
     TPMI_RH_NV_INDEX	ekCertIndex = EK_CERT_RSA_INDEX;	/* default RSA */
+    TPMI_RSA_KEY_BITS 	keyBits = 2048;
+    TPMI_ECC_CURVE	curveID = TPM_ECC_NIST_P256;
     const char 		*hostname = "localhost";	/* default server */
     const char 		*portString = NULL; 		/* server port */
     short 		port = 2323;			/* default server */
@@ -122,7 +123,7 @@ int main(int argc, char *argv[])
     const char 		*akprivFilename = AK_RSA_PRIV_FILENAME;	/* default RSA */
     char 		akpubFullName[256];
     char 		akprivFullName[256];
-    
+
     ERR_load_crypto_strings ();
     OpenSSL_add_all_algorithms();
     setvbuf(stdout, 0, _IONBF, 0);      /* output may be going through pipe to log file */
@@ -138,14 +139,48 @@ int main(int argc, char *argv[])
 	    i++;
 	    if (i < argc) {
 		if (strcmp(argv[i],"rsa") == 0) {
-		    ekCertIndex = EK_CERT_RSA_INDEX;
 		    akpubFilename = AK_RSA_PUB_FILENAME;
 		    akprivFilename = AK_RSA_PRIV_FILENAME;
+		    if (((i + 1) < argc) && (argv[i+1][0] != '-')) {
+			i++;
+			sscanf(argv[i],"%hu", &keyBits);
+		    }
+		    switch (keyBits) {
+		      case 2048:
+			ekCertIndex = EK_CERT_RSA_INDEX;
+			break;
+		      case 3072:
+			ekCertIndex = EK_CERT_RSA_3072_INDEX_H6;
+			break;
+		      default:
+			printf("Bad RSA key bits %u\n", keyBits);
+			printUsage();
+		    }
 		}
 		else if (strcmp(argv[i],"ec") == 0) {
-		    ekCertIndex = EK_CERT_EC_INDEX;
 		    akpubFilename = AK_EC_PUB_FILENAME;
 		    akprivFilename = AK_EC_PRIV_FILENAME;
+		    if (((i + 1) < argc) && (argv[i+1][0] != '-')) {
+			i++;
+			if (strcmp(argv[i],"nistp256") == 0) {
+			    curveID = TPM_ECC_NIST_P256;
+			}
+			else if (strcmp(argv[i],"nistp384") == 0) {
+			    curveID = TPM_ECC_NIST_P384;
+			}
+			else {
+			    printf("Bad parameter %s for -ecc\n", argv[i]);
+			    printUsage();
+			}
+		    }
+		    switch (curveID) {
+		      case TPM_ECC_NIST_P256:
+			ekCertIndex = EK_CERT_EC_INDEX;
+			break;
+		      case TPM_ECC_NIST_P384:
+			ekCertIndex = EK_CERT_ECC_NISTP384_INDEX_H3;
+			break;
+		    }
 		}
 		else {
 		    printf("Bad parameter for -alg\n");
@@ -200,7 +235,7 @@ int main(int argc, char *argv[])
 		printf("ERROR: Missing parameter for -co\n");
 		printUsage();
 	    }
-	    
+
 	}
 	else if (strcmp(argv[i],"-ro") == 0) {
 	    requestOnly = 1;
@@ -226,7 +261,7 @@ int main(int argc, char *argv[])
 		printUsage();
 	    }
 	}
-#endif        
+#endif
 	else if (strcmp(argv[i],"-h") == 0) {
 	    printUsage();
 	}
@@ -247,7 +282,7 @@ int main(int argc, char *argv[])
     rc = makeAkFilenames(akpubFullName,
 			 akprivFullName,
 			 sizeof(akprivFullName),
-			 akpubFilename,			 
+			 akpubFilename,
 			 akprivFilename,
 			 machineName);
     if (rc != 0) {
@@ -262,20 +297,20 @@ int main(int argc, char *argv[])
     /* Create the enrollment data */
     char 		tpmVendor[5];
     uint16_t 		ekCertLength;
-    unsigned char 	*ekCertificate = NULL;			/* freed @3 */	
+    unsigned char 	*ekCertificate = NULL;			/* freed @3 */
     TPM2B_PRIVATE 	attestPriv;
     TPM2B_PUBLIC 	attestPub;				/* marshalled TPMT_PUBLIC */
     uint16_t 		attestPubLength;
     unsigned char 	*attestPubBin = NULL;			/* freed @4 */
-    
+
     if (rc == 0) {
 	rc = createEnrollmentData(tpmVendor,
-				  &ekCertLength, &ekCertificate,	/* freed @3 */		
+				  &ekCertLength, &ekCertificate,	/* freed @3 */
 				  &attestPriv, &attestPub,
 				  &attestPubLength, &attestPubBin,	/* freed @4 */
 				  ekCertIndex);
     }
-    /* send the enrollment data to the server */ 
+    /* send the enrollment data to the server */
     json_object *enrollResponseJson = NULL;
     if (rc == 0) {
 	rc = sendEnrollRequest(&enrollResponseJson,		/* freed @1 */
@@ -435,7 +470,8 @@ static TPM_RC processEnrollResponse(json_object **enrollCertResponseJson,
     /* get the credential blob */
     const char *credentialBlob = NULL;
     if (rc == 0) {
-	rc = JS_ObjectGetString(&credentialBlob, "credentialblob", ACS_JSON_CREDENTIALBLOB_MAX, enrollResponseJson);
+	rc = JS_ObjectGetString(&credentialBlob, "credentialblob", ACS_JSON_CREDENTIALBLOB_MAX,
+				enrollResponseJson);
     }
     /* get the encrypted secret */
     const char *secret = NULL;
@@ -449,7 +485,7 @@ static TPM_RC processEnrollResponse(json_object **enrollCertResponseJson,
 	rc = Array_Scan(&credentialBlobBin,	/* output binary, freed @4 */
 			&credentialBlobBinSize,
 			credentialBlob);	/* input string */
-    }    
+    }
     /* convert the encrypted secret to binary */
     unsigned char 	*secretBin = NULL;
     size_t 		secretBinSize;
@@ -546,7 +582,7 @@ static TPM_RC processEnrollCertResponse(const char *certificateFilename,
 	rc = TSS_File_WriteBinaryFile((const uint8_t *)akCertPemString,
 				      strlen(akCertPemString) +1,
 				      certificateFilename);
-    } 
+    }
     /* sanity check, validate the certificate against the privacy CA certificate */
     if (rc == 0) {
 	rc = validateCertificate(certificateFilename);
@@ -574,7 +610,7 @@ static TPM_RC validateCertificate(const char *certificateFilename)
     if (rc == 0) {
 	caStore  = X509_STORE_new();		/* freed @2 */
 	if (caStore == NULL) {
-	    printf("validateCertificate: X509_store_new failed\n");  
+	    printf("validateCertificate: X509_store_new failed\n");
 	    rc = ACE_OUT_OF_MEMORY;
 	}
     }
@@ -583,7 +619,7 @@ static TPM_RC validateCertificate(const char *certificateFilename)
     if (rc == 0) {
 	caCertFile = fopen(PCA_CERT, "rb");	/* closed @3 */
 	if (caCertFile == NULL) {
-	    printf("validateCertificate: Error opening CA root certificate file %s\n", PCA_CERT);  
+	    printf("validateCertificate: Error opening CA root certificate file %s\n", PCA_CERT);
 	    rc = ACE_FILE_OPEN;
 	}
     }
@@ -593,20 +629,20 @@ static TPM_RC validateCertificate(const char *certificateFilename)
 	caCert = PEM_read_X509(caCertFile, NULL, NULL, NULL);	/* freed @4 */
 	if (caCert == NULL) {
 	    printf("validateCertificate: Error reading CA root certificate file %s\n",
-		   PCA_CERT);  
+		   PCA_CERT);
 	    rc = ACE_FILE_READ;
-	} 
+	}
     }
     /* add the CA X509 certificate to the certificate store */
     if (rc == 0) {
-	X509_STORE_add_cert(caStore, caCert);    
+	X509_STORE_add_cert(caStore, caCert);
     }
     X509_STORE_CTX 		*verifyCtx = NULL;		/* freed @5 */
     /* create the certificate verify context */
     if (rc == 0) {
 	verifyCtx = X509_STORE_CTX_new();
 	if (verifyCtx == NULL) {
-	    printf("ERROR: validateCertificate: X509_STORE_CTX_new failed\n");  
+	    printf("ERROR: validateCertificate: X509_STORE_CTX_new failed\n");
 	    rc = ACE_OUT_OF_MEMORY;
 	}
     }
@@ -615,16 +651,16 @@ static TPM_RC validateCertificate(const char *certificateFilename)
 	int irc = X509_STORE_CTX_init(verifyCtx, caStore, akX509Certificate, NULL);
 	if (irc != 1) {
 	    printf("ERROR: validateCertificate: "
-		   "Error in X509_STORE_CTX_init initializing verify context\n");  
+		   "Error in X509_STORE_CTX_init initializing verify context\n");
 	    rc = ACE_OSSL_X509;
-	}	    
+	}
     }
     /* walk the TPM AK certificate chain */
     if (rc == 0) {
 	int irc = X509_verify_cert(verifyCtx);
 	if (irc != 1) {
 	    printf("ERROR: validateCertificate: "
-		   "Error in X590_verify_cert verifying certificate\n");  
+		   "Error in X590_verify_cert verifying certificate\n");
 	    rc = ACE_INVALID_CERT;
 	}
 	else {
@@ -665,6 +701,8 @@ static void printUsage(void)
 	   "Obtains a certificate from the attestation server.\n");
     printf("\n");
     printf("[-alg (rsa or ec) (default rsa)]\n");
+    printf("\t[2048 3072) (default 2048)]\n");
+    printf("\t[nistp256 nistp384) (default nistp384)]\n");
     printf("[-ho ACS server host name (default localhost)]\n");
     printf("[-po ACS server host port (default ACS_PORT or 2323)]\n");
     printf("[-ma Client machine name (default gethostname()]\n");
@@ -680,5 +718,5 @@ static void printUsage(void)
     printf("\tAttestation key file name is ak{alg}priv_{machine}.bin/ak{alg}pub_{machine}.bin\n");
     printf("\tEndorsement hierarchy authorization assumes Empty Auth\n");
     printf("\n");
-    exit(1);	
+    exit(1);
 }

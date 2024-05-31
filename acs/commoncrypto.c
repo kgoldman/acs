@@ -3,9 +3,8 @@
 /*			TPM 2.0 Attestation - Common Crypto	  		*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: commoncrypto.c 1279 2018-07-24 18:32:37Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016, 2017.					*/
+/* (c) Copyright IBM Corporation 2016 - 2024.					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -45,6 +44,9 @@
 #include "openssl/pem.h"
 #include <openssl/aes.h>
 
+#include <openssl/evp.h>
+#include <openssl/core_names.h>
+
 #include <ibmtss/tss.h>
 #include <ibmtss/tssutils.h>
 #include <ibmtss/tssfile.h>
@@ -69,7 +71,7 @@ TPM_RC convertX509DerToPem(char **pemString,	/* freed by caller */
     uint32_t 		rc = 0;
     X509 		*x509 = NULL;;
     unsigned char 	*tmpPtr;	/* because d2i_X509 moves the ptr */
-    
+
     /* convert DER to X509 */
     if (rc == 0) {
 	tmpPtr = derBin;
@@ -90,7 +92,7 @@ TPM_RC convertX509DerToPem(char **pemString,	/* freed by caller */
     return rc;
 }
 
-/* aesencrypt() uses encryptionKey tp encrypt decData to encData.  PKCS padding is used */
+/* aesencrypt() uses encryptionKey to encrypt decData to encData.  PKCS padding is used */
 
 uint32_t aesencrypt(uint8_t **encData,		/* freed by caller */
 		    uint32_t *encDataLen,
@@ -158,7 +160,7 @@ uint32_t aesencrypt(uint8_t **encData,		/* freed by caller */
     return rc;
 }
 
-/* aesdecrypt() uses encryptionKey tp decrypt encData to decData.  PKCS padding is checked */
+/* aesdecrypt() uses encryptionKey to decrypt encData to decData.  PKCS padding is checked */
 
 uint32_t aesdecrypt(unsigned char **decData,   		/* output decrypted data, caller frees */
 		    uint32_t *decDataLen,		/* output */
@@ -171,7 +173,7 @@ uint32_t aesdecrypt(unsigned char **decData,   		/* output decrypted data, calle
     uint32_t		i;
     uint32_t		padLength;
     unsigned char       *padData;
-    
+
     if (vverbose) printf("aesdecrypt: Length %u\n", encDataLen);
     /* sanity check encrypted length */
     if (rc == 0) {
@@ -240,4 +242,45 @@ uint32_t aesdecrypt(unsigned char **decData,   		/* output decrypted data, calle
     return rc;
 }
 
+/* getEcCurve() gets the TCG algorithm ID curve associated with the openssl EC_KEY.  Gets the length
+   of the private key (in bytes).
+
+   NOTE: OpenSSL 3.x specific, taken from cryptoutils.c
+*/
+
+
+TPM_RC getEcCurve(TPMI_ECC_CURVE *curveID,
+		  int 		*privateKeyBytes,
+		  const EVP_PKEY *ecKey)
+{
+    TPM_RC  	rc = 0;
+    int		irc;
+    char 	curveName[64];
+
+    if (rc == 0) {
+	irc = EVP_PKEY_get_utf8_string_param(ecKey, OSSL_PKEY_PARAM_GROUP_NAME,
+					     curveName, sizeof(curveName), NULL);
+	if (irc != 1) {
+	    printf("getEcCurve: Error getting curve\n");
+	    rc = TSS_RC_EC_KEY_CONVERT;
+	}
+    }
+    /* FIXME make table */
+    if (rc == 0) {
+	if (strcmp(curveName, "prime256v1") == 0) {
+	    *curveID = TPM_ECC_NIST_P256;
+	    *privateKeyBytes = 32;
+	}
+	else if (strcmp(curveName, "secp384r1") == 0) {
+	    *curveID = TPM_ECC_NIST_P384;
+	    *privateKeyBytes = 48;
+	}
+	else {
+	    printf("getEcCurve: Error, curve %s not supported \n", curveName);
+	    rc = TSS_RC_EC_KEY_CONVERT;
+
+	}
+    }
+    return rc;
+}
 

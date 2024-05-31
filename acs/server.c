@@ -4,7 +4,7 @@
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
 /*										*/
-/* (c) Copyright IBM Corporation 2015 - 2022					*/
+/* (c) Copyright IBM Corporation 2015 - 2024					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -155,7 +155,7 @@ static uint32_t verifyQuoteSignatureRSA(unsigned int 	*quoteVerified,
 					TPMT_HA 	*digest,
 					X509 		*x509,
 					TPMT_SIGNATURE 	*tpmtSignature);
-static uint32_t verifyQuoteSignatureECC(unsigned int 	*quoteVerified,	
+static uint32_t verifyQuoteSignatureECC(unsigned int 	*quoteVerified,
 					TPMT_HA 	*digest,
 					X509 		*x509,
 					TPMT_SIGNATURE 	*tpmtSignature);
@@ -238,7 +238,7 @@ static void getTimeStamp(char *timestamp,
 static uint32_t getPubKeyFingerprint(uint8_t *x509Fingerprint,
 				     size_t fingerprintSize,
 				     X509 *x509);
-uint32_t verifyImaTemplateData(uint32_t *badEvent, 
+uint32_t verifyImaTemplateData(uint32_t *badEvent,
 			       ImaTemplateData *imaTemplateData,
 			       int 	littleEndian,
 			       ImaEvent *imaEvent,
@@ -266,7 +266,7 @@ static uint32_t processQuoteResults12(json_object 	*cmdJson,
 				      unsigned int 	quoteVerified,
 				      const char 	*attestLogId,
 				      MYSQL 		*mysql);
-static uint32_t verifyQuoteSignature12(unsigned int 	*quoteVerified,	
+static uint32_t verifyQuoteSignature12(unsigned int 	*quoteVerified,
 				       const char 	*nonceServerString,
 				       unsigned char 	*pcrDataBin,
 				       size_t 		pcrDataBinSize,
@@ -332,7 +332,7 @@ int main(int argc, char *argv[])
     int		i;    		/* argc iterator */
     const char 	*listFilename = NULL;
     const char 	*imaCertFilename[IMA_KEYS_MAX];
-    
+
     setvbuf(stdout, 0, _IONBF, 0);      /* output may be going through pipe to log file */
     /* parse command line arguments */
     for (i=1 ; (i<argc) && (rc == 0) ; i++) {
@@ -354,7 +354,7 @@ int main(int argc, char *argv[])
 		    imaKeyCount++;
 		}
 		else {
-		    printf("-imacert exceeds max %u\n", IMA_KEYS_MAX); 
+		    printf("-imacert exceeds max %u\n", IMA_KEYS_MAX);
 		    printUsage();
 		}
 	    }
@@ -422,10 +422,10 @@ int main(int argc, char *argv[])
     /* test the database connection */
     if (rc == 0) {
 	MYSQL *mysql = NULL;
-	rc = SQ_Connect(&mysql);	/* closed @1 */	
+	rc = SQ_Connect(&mysql);	/* closed @1 */
 	SQ_Close(mysql);		/* @1 */
     }
-    if (rc != 0) {	
+    if (rc != 0) {
 	return rc;			/* server cannot start, fatal error */
     }
     /* server main loop */
@@ -443,7 +443,7 @@ int main(int argc, char *argv[])
 	    rc = Socket_Read(connection_fd,        	/* read/write file descriptor */
 			     &cmdBuffer,   		/* output: command stream, freed @1 */
 			     &cmdLength);		/* output: command stream length */
-	}	
+	}
 	/* process client request */
 	if (rc == 0) {
 	    if (verbose) {
@@ -505,7 +505,7 @@ static uint32_t processRequest(unsigned char **rspBuffer,	/* freed by caller */
        response buffer. */
     if (rc == 0) {
 	/* nonce */
-	if ((strcmp(commandString, "nonce") == 0) || 
+	if ((strcmp(commandString, "nonce") == 0) ||
 	    (strcmp(commandString, "nonce12") == 0)) {
 	    if (vverbose) printf("processRequest: processing nonce\n");
 	    rc = processNonce(rspBuffer,		/* freed by caller */
@@ -584,7 +584,7 @@ static uint32_t processRequest(unsigned char **rspBuffer,	/* freed by caller */
 			      ACE_BAD_JSON);
     }
     JS_ObjectFree(cmdJson);	/* @1 */
-    return rc;	
+    return rc;
 }
 
 /* processSendError() sends response json of the form
@@ -602,14 +602,14 @@ static uint32_t processSendError(unsigned char **rspBuffer,	/* freed by caller *
 				 uint32_t errorCode)
 {
     uint32_t  	rc = 0;
-    
+
     /* create the error return json */
     json_object *response = NULL;
     rc = JS_ObjectNew(&response);			/* freed @1 */
     if (rc == 0) {
 	rc = JS_Rsp_AddError(response, errorCode);
     }
-    if (rc == 0) {	
+    if (rc == 0) {
 	rc = JS_ObjectSerialize(rspLength,
 				(char **)rspBuffer,	/* freed by caller */
 				response);		/* @1 */
@@ -625,9 +625,9 @@ static uint32_t processSendError(unsigned char **rspBuffer,	/* freed by caller *
    "command":"nonce",
 
    or
-   
+
    "command":"nonce12",
-   
+
    "hostname":"cainl.watson.ibm.com",
    "userid":"kgold"
    "boottime":"2019-12-02 10:12:57"
@@ -637,7 +637,7 @@ static uint32_t processSendError(unsigned char **rspBuffer,	/* freed by caller *
 
    It updates the machine DB entry with the boottime, zero IMA events, and the initial all zero IMA
    PCR.
-   
+
    It creates an attestlog DB entry for this client attestation, with:
 
    userid - the client user name
@@ -657,7 +657,7 @@ static uint32_t processSendError(unsigned char **rspBuffer,	/* freed by caller *
    "pcrselect":"00000002000b03ff0400000403000000"
 
    for new logs
-   
+
    "biosentry":"0",
    "imaentry":"0"
 
@@ -700,7 +700,7 @@ static uint32_t processNonce(unsigned char **rspBuffer,		/* freed by caller */
     /* connect to the db */
     MYSQL *mysql = NULL;
     if (rc == 0) {
-	rc = SQ_Connect(&mysql);	/* closed @1 */	
+	rc = SQ_Connect(&mysql);	/* closed @1 */
     }
     /* get the DB information for this machine, verify that machine is enrolled */
     MYSQL_RES 		*machineResult = NULL;
@@ -731,7 +731,7 @@ static uint32_t processNonce(unsigned char **rspBuffer,		/* freed by caller */
 	else if (akCertificatePem == NULL) {
 	    printf("ERROR: processNonce: "
 		   "row for hostname %s has invalid certificate in machine table\n",
-		   hostname);  
+		   hostname);
 	    rc = ACE_INVALID_CERT;
 	}
     }
@@ -857,7 +857,7 @@ static uint32_t processNonce(unsigned char **rspBuffer,		/* freed by caller */
 		biosEvents = 0;		/* new boot, get pre-OS events */
 	    }
 	    else {
-		biosEvents = -1;	/* incremental, pre-OS events not required */	
+		biosEvents = -1;	/* incremental, pre-OS events not required */
 	    }
 	    if (rc == 0) {
 		sprintf(eventsString, "%d", biosEvents);
@@ -874,7 +874,7 @@ static uint32_t processNonce(unsigned char **rspBuffer,		/* freed by caller */
 	else {
 	    rc1 = JS_Rsp_AddError(response, rc);
 	}
-	if (rc1 == 0) {	
+	if (rc1 == 0) {
 	    rc = JS_ObjectSerialize(rspLength,
 				    (char **)rspBuffer,	/* freed by caller */
 				    response);		/* @6 */
@@ -902,15 +902,15 @@ static uint32_t processNonce(unsigned char **rspBuffer,		/* freed by caller */
    "quoted":"hexascii",
    "signature":"hexascii",
    "event1":"000000010000000500...",
-   "imaevent0":"0000000aa97937766682b ...",  
+   "imaevent0":"0000000aa97937766682b ...",
    }
 
    The server response is this if BIOS PCRs match:
-     
+
    {
    "response":"quote"
    }
-     
+
    ~~
 
    Verifies the quote signature
@@ -919,8 +919,8 @@ static uint32_t processNonce(unsigned char **rspBuffer,		/* freed by caller */
    Walks the IMA event log until the PCRs match the quote (pass 1)
    Checks the PCR white list if available
    Validates the IMA event (pass 2)
-   
-   
+
+
    Initializes the machines PCR white list
    Initializes the machines imaevents, imapcr, boottime
 
@@ -950,10 +950,10 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
 			     json_object *cmdJson,
 			     unsigned char *cmdBuffer)
 {
-    uint32_t  		rc = 0;	
+    uint32_t  		rc = 0;
     unsigned char 	*tmpptr;	/* so unmarshal pointers don't move */
     uint32_t		tmpsize;
-    
+
     /* from client */
     const char 		*hostname = NULL;
     const char 		*quoted = NULL;		/* quote in hexascii */
@@ -962,7 +962,7 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
     const char 		*signature = NULL;
     unsigned char 	*signatureBin = NULL;
     size_t 		signatureBinSize;
-    
+
     /* status flags */
     unsigned int 	quoteVerified = TRUE;	/* TRUE if quote signature verified AND nonce
 						   matches */
@@ -991,7 +991,7 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
 	rc = Array_Scan(&quotedBin ,	/* output binary, freed @1 */
 			&quotedBinSize,
 			quoted);	/* input string */
-    }    
+    }
     /* Get the client quote signature */
     if (rc == 0) {
 	rc = JS_ObjectGetString(&signature, "signature", ACS_JSON_SIGNATURE_MAX, cmdJson);
@@ -1001,7 +1001,7 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
 	rc = Array_Scan(&signatureBin,	/* output binary, freed @2 */
 			&signatureBinSize ,
 			signature);	/* input string */
-	
+
     }
     /* unmarshal the signature stream back to a TPMT_SIGNATURE structure */
     TPMT_SIGNATURE 	tpmtSignature;
@@ -1013,7 +1013,7 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
     /* read the nonce from the attestlog based on the hostname */
     MYSQL *mysql = NULL;
     if (rc == 0) {
-	rc = SQ_Connect(&mysql);	/* closed @3 */	
+	rc = SQ_Connect(&mysql);	/* closed @3 */
     }
     /* in machines db, for host, get AK certificate
      */
@@ -1024,7 +1024,7 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
     unsigned int 	nextImaEventNum;		/* first new IMA event to be processed */
     unsigned int 	firstImaEventNum;		/* first IMA event number processed */
     const char 		*imapcr;
-    
+
     if (rc == 0) {
 	rc = SQ_GetMachineEntry(&machineId, 		/* freed @4 */
 				NULL,			/* tpmvendor */
@@ -1043,17 +1043,17 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
 				hostname);
 	if (rc != 0) {
 	    printf("ERROR: processQuote: row for hostname %s does not exist in machine table\n",
-		   hostname);  
+		   hostname);
 	    rc = ACE_NOT_ENROLLED;
 	}
 	else if (akCertificatePem == NULL) {
 	    printf("ERROR: processQuote: "
 		   "row for hostname %s has invalid certificate in machine table\n",
-		   hostname);  
+		   hostname);
 	    rc = ACE_INVALID_CERT;
 	}
 	else {
-	    if (verbose) printf("INFO: processQuote: found machines DB entry for %s\n", hostname);  
+	    if (verbose) printf("INFO: processQuote: found machines DB entry for %s\n", hostname);
 	}
     }
     /* in attestlog, get nonce, quoteVerified to ensure nonce is only used once per quote.  Row was
@@ -1146,7 +1146,7 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
 	    }
 	}
 	else {
-	    if (verbose) printf("INFO: processQuote: found attestlog DB entry for %s\n", hostname);  
+	    if (verbose) printf("INFO: processQuote: found attestlog DB entry for %s\n", hostname);
 	}
     }
     /* Validate the quote signature */
@@ -1164,7 +1164,7 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
 	tmpsize= quotedBinSize;
 	rc = TSS_TPMS_ATTEST_Unmarshalu(&tpmsAttest, &tmpptr, &tmpsize);
 	if (rc != 0) {
-	    printf("ERROR: processQuote: cannot unmarshal client quoted structure\n");  
+	    printf("ERROR: processQuote: cannot unmarshal client quoted structure\n");
 	}
     }
     /* validate that the nonce / extraData in the quoted is what was supplied to the client */
@@ -1271,7 +1271,7 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
 	/* determine whether BIOS PCRs match the previous quote. If no previous quote, PCRs do not
 	   match.  */
 	if (rc == 0) {
-	    if (verbose) printf("INFO: processQuote: Check previous BIOS PCRs\n");  
+	    if (verbose) printf("INFO: processQuote: Check previous BIOS PCRs\n");
 	    rc = checkBiosPCRsMatch(&previousBiosPcrs,		/* TRUE if previous BIOS PCRs */
 				    &biosPcrsMatch,		/* TRUE if previous PCRs match */
 				    (const char **)quotePcrsSha256String,
@@ -1303,7 +1303,7 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
 					firstImaEventNum,	/* first IMA event processed */
 					nextImaEventNum,	/* next IMA event number to be processed */
 					attestLogId,
-					mysql);	
+					mysql);
 	}
     }
     /*
@@ -1327,7 +1327,7 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
 	else {
 	    rc1 = JS_Rsp_AddError(response, rc);
 	}
-	if (rc1 == 0) {	
+	if (rc1 == 0) {
 	    rc = JS_ObjectSerialize(rspLength,
 				    (char **)rspBuffer,	/* freed by caller */
 				    response);		/* @9 */
@@ -1338,7 +1338,7 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
 	rc = rc1;
     }
     free(quotedBin);			/* @1 */
-    free(signatureBin);			/* @2 */ 
+    free(signatureBin);			/* @2 */
     SQ_Close(mysql);			/* @3 */
     free(machineId);			/* @4 */
     SQ_FreeResult(machineResult1);	/* @5 */
@@ -1347,7 +1347,7 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
     SQ_FreeResult(attestLogPcrResult);	/* @8 */
     for (pcrNum = 0 ; pcrNum < IMPLEMENTATION_PCR ; pcrNum++) {
 	free(quotePcrsSha256Bin[pcrNum]);		/* @10 */
-	free(quotePcrsSha256String[pcrNum]);		/* @12 */			
+	free(quotePcrsSha256String[pcrNum]);		/* @12 */
     }
     return rc;
 }
@@ -1367,11 +1367,11 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
    }
 
    The server response is:
-     
+
    {
    "response":"quote"
    }
-     
+
    ~~
 
    Verifies the quote signature
@@ -1380,7 +1380,7 @@ static uint32_t processQuote(unsigned char **rspBuffer,		/* freed by caller */
    Walks the IMA event log until the PCRs match the quote (pass 1)
    Checks the PCR white list if available
    Validates the IMA event (pass 2)
-   
+
    Initializes the machines PCR white list
    Initializes the machines imaevents, imapcr, boottime
 
@@ -1410,7 +1410,7 @@ static uint32_t processQuote12(unsigned char **rspBuffer,		/* freed by caller */
 			       json_object *cmdJson,
 			       unsigned char *cmdBuffer)
 {
-    uint32_t  		rc = 0;	
+    uint32_t  		rc = 0;
     /* from client */
     const char 		*hostname = NULL;
     const char 		*pcrDataString = NULL;	/* string from json */
@@ -1451,7 +1451,7 @@ static uint32_t processQuote12(unsigned char **rspBuffer,		/* freed by caller */
 	rc = Array_Scan(&pcrDataBin ,		/* output binary, freed @2 */
 			&pcrDataBinSize,
 			pcrDataString);		/* input string */
-    }    
+    }
     /* Get the client versionInfo */
     if (rc == 0) {
 	rc = JS_ObjectGetString(&versionInfo, "versioninfo", ACS_JSON_QUOTED_MAX, cmdJson);
@@ -1461,7 +1461,7 @@ static uint32_t processQuote12(unsigned char **rspBuffer,		/* freed by caller */
 	rc = Array_Scan(&versionInfoBin ,	/* output binary, freed @3 */
 			&versionInfoBinSize,
 			versionInfo);		/* input string */
-    }    
+    }
     /* Get the client quote signature */
     if (rc == 0) {
 	rc = JS_ObjectGetString(&signature, "signature", ACS_JSON_SIGNATURE_MAX, cmdJson);
@@ -1471,12 +1471,12 @@ static uint32_t processQuote12(unsigned char **rspBuffer,		/* freed by caller */
 	rc = Array_Scan(&signatureBin,	/* output binary, freed @4 */
 			&signatureBinSize,
 			signature);	/* input string */
-	
+
     }
     /* read the nonce from the attestlog based on the hostname */
     MYSQL *mysql = NULL;
     if (rc == 0) {
-	rc = SQ_Connect(&mysql);	/* closed @5 */	
+	rc = SQ_Connect(&mysql);	/* closed @5 */
     }
     /* in machines db, select id, certificate, boottime using hostname and active
        in attestlog, select hostname, order by id, get nonce, pcrselect
@@ -1507,20 +1507,20 @@ static uint32_t processQuote12(unsigned char **rspBuffer,		/* freed by caller */
 				hostname);
 	if (rc != 0) {
 	    printf("ERROR: processQuote12: row for hostname %s does not exist in machine table\n",
-		   hostname);  
+		   hostname);
 	    rc = ACE_NOT_ENROLLED;
 	}
 	else if (akCertificatePem == NULL) {
 	    printf("ERROR: processQuote12: "
 		   "row for hostname %s has invalid certificate in machine table\n",
-		   hostname);  
+		   hostname);
 	    rc = ACE_INVALID_CERT;
 	}
 	else {
 	    if (verbose) printf("INFO: processQuote12: found machines DB entry for %s\n",
-				hostname);  
+				hostname);
 	}
-    }    
+    }
     /* in attestlog, get nonce, quoteVerified to ensure nonce is only used once per quote.  Row was
        inserted at processNonce.  If the row does not exist, fatal client error */
     MYSQL_RES 		*attestLogResult = NULL;
@@ -1551,17 +1551,17 @@ static uint32_t processQuote12(unsigned char **rspBuffer,		/* freed by caller */
 	   that the nonce has not been used.  After a quote, quoteverified is set true or false,
 	   indicating that the nonce has been used. */
 	else if (quoteVerifiedString != NULL) {
-	    printf("ERROR: processQuote12: nonce for hostname %s already used\n", hostname);  
+	    printf("ERROR: processQuote12: nonce for hostname %s already used\n", hostname);
 	    rc = ACE_NONCE_USED;
 	}
 	else {
 	    if (verbose) printf("INFO: processQuote12: found attestlog DB entry for %s\n",
-				hostname);  
+				hostname);
 	}
     }
     /* Validate the quote signature */
     if (rc == 0) {
-	rc = verifyQuoteSignature12(&quoteVerified,	
+	rc = verifyQuoteSignature12(&quoteVerified,
 				    nonceServerString,
 				    pcrDataBin,
 				    pcrDataBinSize,
@@ -1577,7 +1577,7 @@ static uint32_t processQuote12(unsigned char **rspBuffer,		/* freed by caller */
 	uint32_t size = pcrDataBinSize;
 	rc = TSS_TPM_PCR_INFO_SHORT_Unmarshalu(&pcrInfoShort, &buffer, &size);
 	if (rc != 0) {
-	    printf("ERROR: processQuote12: cannot unmarshal client pcrData structure\n");  
+	    printf("ERROR: processQuote12: cannot unmarshal client pcrData structure\n");
 	}
     }
     /* validating the client nonce is not required since the server nonce was used to reconstruct
@@ -1637,7 +1637,7 @@ static uint32_t processQuote12(unsigned char **rspBuffer,		/* freed by caller */
 	rc = processLogResults(logVerified, eventNum,
 			       nextImaEventNum,		/* next  IMA event number to be processed */
 			       attestLogId, mysql);
-    }    
+    }
     /*
       Processing once the quote is verified completely
     */
@@ -1659,7 +1659,7 @@ static uint32_t processQuote12(unsigned char **rspBuffer,		/* freed by caller */
 	    rc= updateImaState(nextImaEventNum,		/* next IMA event number to be processed */
 			       quotePcrsSha1String[TPM_IMA_PCR],
 			       machineId, mysql);
-	}    
+	}
  	/* add validated quote PCRs to attestlog DB */
 	if (rc == 0) {
 	    rc = processQuotePCRs(quotePcrsSha1String, attestLogId, mysql);
@@ -1671,7 +1671,7 @@ static uint32_t processQuote12(unsigned char **rspBuffer,		/* freed by caller */
 	/* determine whether BIOS PCRs match the previous quote. If no previous quote, PCRs do not
 	   match.  */
 	if (rc == 0) {
-	    if (verbose) printf("INFO: processQuote12: Check previous BIOS PCRs\n");  
+	    if (verbose) printf("INFO: processQuote12: Check previous BIOS PCRs\n");
 	    rc = checkBiosPCRsMatch(&previousBiosPcrs,		/* TRUE if previous BIOS PCRs */
 				    &biosPcrsMatch,		/* TRUE if previous PCRs match */
 				    (const char **)quotePcrsSha1String,
@@ -1703,7 +1703,7 @@ static uint32_t processQuote12(unsigned char **rspBuffer,		/* freed by caller */
 					firstImaEventNum,	/* first IMA event processed */
 					nextImaEventNum,	/* next IMA event number to be processed */
 					attestLogId,
-					mysql);	
+					mysql);
 	}
     }
     /*
@@ -1719,7 +1719,7 @@ static uint32_t processQuote12(unsigned char **rspBuffer,		/* freed by caller */
 	else {
 	    rc1 = JS_Rsp_AddError(response, rc);
 	}
-	if (rc1 == 0) {	
+	if (rc1 == 0) {
 	    rc = JS_ObjectSerialize(rspLength,
 				    (char **)rspBuffer,	/* freed by caller */
 				    response);		/* @14 */
@@ -1729,9 +1729,9 @@ static uint32_t processQuote12(unsigned char **rspBuffer,		/* freed by caller */
     else {
 	rc = rc1;
     }
-    free(pcrDataBin);			/* @2 */ 
-    free(versionInfoBin);		/* @3 */ 
-    free(signatureBin);			/* @4 */ 
+    free(pcrDataBin);			/* @2 */
+    free(versionInfoBin);		/* @3 */
+    free(signatureBin);			/* @4 */
     SQ_Close(mysql);			/* @5 */
     free(machineId);			/* @6 */
     SQ_FreeResult(machineResult);	/* @7 */
@@ -1740,7 +1740,7 @@ static uint32_t processQuote12(unsigned char **rspBuffer,		/* freed by caller */
     SQ_FreeResult(attestLogPcrResult);	/* @10 */
     for (pcrNum = 0 ; pcrNum < IMPLEMENTATION_PCR ; pcrNum++) {
 	free(quotePcrsSha1Bin[pcrNum]);		/* @11 */
-	free(quotePcrsSha1String[pcrNum]);	/* @12 */			
+	free(quotePcrsSha1String[pcrNum]);	/* @12 */
     }
     return rc;
 }
@@ -1909,7 +1909,7 @@ static uint32_t makePcrStream12(unsigned char 	*pcrBinStream,
 
     if (rc == 0) {
 	/* create the TPM 1.2 PCR selection */
-	makePcrSelect12(&valueSize, &pcrSelection);	
+	makePcrSelect12(&valueSize, &pcrSelection);
 	if (vverbose) printf("makePcrStream12: valueSize %u\n", valueSize);
 	/* serialize it to the stream */
 	rc = TSS_TPM_PCR_SELECTION_Marshalu(&pcrSelection, pcrBinStreamSize, &tmpptr, NULL);
@@ -2022,7 +2022,7 @@ static uint32_t copyPreviousPCRs(const char *boottime,
     uint32_t  		rc = 0;
     MYSQL_RES 		*previousPcrsResult = NULL;
     const char 		*previousPcrs[IMPLEMENTATION_PCR];
-    
+
     if (rc == 0) {
 	rc = SQ_GetPreviousPcrs(previousPcrs,
 				&previousPcrsResult,	/* freed @1*/
@@ -2116,7 +2116,7 @@ static uint32_t checkBiosPCRsMatch(unsigned int *previousBiosPcrs,	/* boolean */
     }
     /* have previous PCRs to compare */
     else {
-	
+
 	*previousBiosPcrs = TRUE;
 	*biosPcrsMatch = TRUE;
 	uint8_t sizeOfSelect;
@@ -2129,7 +2129,7 @@ static uint32_t checkBiosPCRsMatch(unsigned int *previousBiosPcrs,	/* boolean */
 	uint32_t pcrNum;
 	for (pcrNum = 0 ; *biosPcrsMatch && (pcrNum < IMPLEMENTATION_PCR) ; pcrNum++) {
 
-	    
+
 	    int selected =			/* bitmap, is this PCR selected */
 		(pcrSelect[pcrNum / 8]) & (1 << (pcrNum % 8));
 	    if (selected) {
@@ -2229,10 +2229,10 @@ static uint32_t processBiosEntries20Pass1(unsigned int *eventNum,	/* events proc
 				 cmdJson);
 	    if (rc != 0) {
 		rc = 0;		/* last event is not an error */
-		if (vverbose) printf("processBiosEntries20Pass1: done, no event %u\n", *eventNum);  
+		if (vverbose) printf("processBiosEntries20Pass1: done, no event %u\n", *eventNum);
 		(*eventNum)--;	/* this event did not exist */
 		done = TRUE;
-	    } 
+	    }
 	}
 	/* convert the event from a string to binary */
 	unsigned char 	*eventBin = NULL;
@@ -2352,7 +2352,7 @@ static uint32_t processBiosEntries20Pass1(unsigned int *eventNum,	/* events proc
 				       (uint8_t *)quotePcrsSha256Bin[pcrNum],
 				       SHA256_DIGEST_SIZE);
 	}
-    }    
+    }
     return rc;
 }
 
@@ -2398,16 +2398,16 @@ static uint32_t processBiosEntries12Pass1(unsigned int *eventNum,	/* events proc
     for (*eventNum = 0 ; (rc == 0) && !done ; (*eventNum)++ ) {
 	/* get the next event */
 	char *eventString = NULL;
-	if (rc == 0) { 
+	if (rc == 0) {
 	    rc = JS_Cmd_GetEvent(&eventString,	/* freed @2 */
 				 *eventNum,
 				 cmdJson);
 	    if (rc != 0) {
 		rc = 0;		/* last event is not an error */
-		if (vverbose) printf("processBiosEntries12Pass1: done, no event %u\n", *eventNum);  
+		if (vverbose) printf("processBiosEntries12Pass1: done, no event %u\n", *eventNum);
 		(*eventNum)--;	/* this event did not exist, decrement because for loop increments */
 		done = TRUE;
-	    } 
+	    }
 	}
 	/* convert the event from a string to binary */
 	unsigned char *eventBin = NULL;
@@ -2496,7 +2496,7 @@ static uint32_t processBiosEntries12Pass1(unsigned int *eventNum,	/* events proc
 				       (uint8_t *)quotePcrsSha1Bin[pcrNum],
 				       SHA1_DIGEST_SIZE);
 	}
-    }    
+    }
     return rc;
 }
 
@@ -2524,7 +2524,7 @@ static uint32_t processBiosEntries12Pass1(unsigned int *eventNum,	/* events proc
 
    Returns quotePcrsSha256Bin as the reconstructed quote PCRs.  This is either the input array (for
    a first attestation after a boot) or a freed / malloced array (for an incremental log).
-   
+
 */
 
 static uint32_t processImaEntries20Pass1(unsigned int *logVerified,
@@ -2606,7 +2606,7 @@ static uint32_t processImaEntries20Pass1(unsigned int *logVerified,
 	if (rc == 0) {
 	    if (tpmsAttest->attested.quote.pcrDigest.t.size != SHA256_DIGEST_SIZE) {
 		printf("ERROR: processImaEntries20Pass1: quoted PCR digest size %u not supported\n",
-		       tpmsAttest->attested.quote.pcrDigest.t.size);  
+		       tpmsAttest->attested.quote.pcrDigest.t.size);
 		rc = ACE_DIGEST_LENGTH;
 	    }
 	}
@@ -2705,7 +2705,7 @@ static uint32_t processImaEntries20Pass1(unsigned int *logVerified,
 	    TPMT_HA imapcr;
 	    if ((rc == 0) && !done) {
 		memcpy(&imapcr.digest, quotePcrsSha256Bin[TPM_IMA_PCR], TPM_SHA256_SIZE);
-		
+
 		rc = IMA_Extend(&imapcr, &imaEvent, TPM_ALG_SHA256);
 		if (rc != 0) {
 		    printf("ERROR: processImaEntries20Pass1: error extending event %u\n",
@@ -2867,7 +2867,7 @@ static uint32_t processImaEntries12Pass1(unsigned int *logVerified,	/* bool, PCR
 		    done = TRUE;
 		    if (vverbose) printf("processImaEntries12Pass1: done, no event %u\n",
 					 imaEventNum);
-		} 
+		}
 	    }
 	    unsigned char *event = NULL;
 	    size_t eventLength;
@@ -2910,7 +2910,7 @@ static uint32_t processImaEntries12Pass1(unsigned int *logVerified,	/* bool, PCR
 	    TPMT_HA imapcr;
 	    if ((rc == 0) && !done) {
 		memcpy(&imapcr.digest, quotePcrsSha1Bin[TPM_IMA_PCR], TPM_SHA1_SIZE);
-		
+
 		rc = IMA_Extend(&imapcr, &imaEvent, TPM_ALG_SHA1);
 		if (rc != 0) {
 		    printf("ERROR: processImaEntries12Pass1: error extending event %u\n",
@@ -2948,7 +2948,7 @@ static uint32_t verifyQuoteSignature(unsigned int 	*quoteVerified,		/* result */
 				     TPMT_SIGNATURE 	*tpmtSignature)		/* signature */
 {
     uint32_t 	rc = 0;
- 
+
     /* SHA-256 hash the quoted */
     TPMT_HA digest;
     if (rc == 0) {
@@ -3025,7 +3025,7 @@ static uint32_t verifyQuoteSignature12(unsigned int 	*quoteVerified,		/* result 
     uint32_t 		rc = 0;
     unsigned char 	*nonceServerBin = NULL;
     size_t 		nonceServerBinSize;
-    
+
     if (rc == 0) {
 	rc = Array_Scan(&nonceServerBin,	/* output binary, freed @1 */
 			&nonceServerBinSize,
@@ -3056,7 +3056,7 @@ static uint32_t verifyQuoteSignature12(unsigned int 	*quoteVerified,		/* result 
     TPMT_HA		q1Digest;
     if (rc == 0) {
 	q1Digest.hashAlg = TPM_ALG_SHA1;
-	rc = TSS_Hash_Generate(&q1Digest,	
+	rc = TSS_Hash_Generate(&q1Digest,
 			       q1Written, q1Buffer,			/* TPM_QUOTE_INFO2 */
 			       versionInfoBinSize, versionInfoBin,	/* TPM_CAP_VERSION_INFO */
 			       0, NULL);
@@ -3108,7 +3108,7 @@ static uint32_t verifyQuoteSignatureRSA(unsigned int 	*quoteVerified,		/* result
     if (rc == 0) {
 	evpPkey = X509_get_pubkey(x509);	/* freed @1 */
 	if (evpPkey == NULL) {
-	    printf("ERROR: verifyQuoteSignatureRSA: X509_get_pubkey failed\n");  
+	    printf("ERROR: verifyQuoteSignatureRSA: X509_get_pubkey failed\n");
 	    rc = ACE_OSSL_X509;
 	}
     }
@@ -3151,7 +3151,7 @@ static uint32_t verifyQuoteSignatureECC(unsigned int 	*quoteVerified,		/* result
     if (rc == 0) {
 	evpPkey = X509_get_pubkey(x509);	/* freed @1 */
 	if (evpPkey == NULL) {
-	    printf("ERROR: verifyQuoteSignatureECC: X509_get_pubkey failed\n");  
+	    printf("ERROR: verifyQuoteSignatureECC: X509_get_pubkey failed\n");
 	    rc = ACE_OSSL_X509;
 	}
     }
@@ -3208,11 +3208,11 @@ static uint32_t verifyQuoteNonce(unsigned int 	*quoteVerified,		/* boolean resul
     if (rc == 0) {
 	if (memcmp(nonceServerBin, &tpmsAttest->extraData.t.buffer, nonceServerBinSize) != 0) {
 	    *quoteVerified = FALSE;	/* quote nonce */
-	    printf("ERROR: verifyQuoteNonce: client nonce does not match server database\n");  
+	    printf("ERROR: verifyQuoteNonce: client nonce does not match server database\n");
 	}
 	else {
 	    *quoteVerified = TRUE;
-	    if (verbose) printf("INFO: verifyQuoteNonce: client nonce matches server database\n");  
+	    if (verbose) printf("INFO: verifyQuoteNonce: client nonce matches server database\n");
 	}
     }
     free(nonceServerBin);		/* @1 */
@@ -3546,11 +3546,11 @@ static uint32_t processQuoteWhiteList(char 		*quotePcrsString[],
     if (!storePcrWhiteList) {
 	if (rc == 0) {
 	    if (vverbose) printf("processQuoteWhiteList: validate "
-				 "quote BIOS PCRs vs. white list\n");  
+				 "quote BIOS PCRs vs. white list\n");
 	    for (pcrNum = 0 ; (pcrNum < 8) && !pcrinvalid ; pcrNum++) {
 		irc = strcmp(firstPcrsString[pcrNum], quotePcrsString[pcrNum]);
 		if (irc != 0) {
-		    if (verbose) printf("INFO: processQuoteWhiteList: PCR %02u invalid\n", pcrNum);  
+		    if (verbose) printf("INFO: processQuoteWhiteList: PCR %02u invalid\n", pcrNum);
 		    if (verbose) printf("INFO: processQuoteWhiteList: current PCR %s\n",
 					quotePcrsString[pcrNum]);
 		    if (verbose) printf("INFO: processQuoteWhiteList: valid   PCR %s\n",
@@ -3627,7 +3627,7 @@ static uint32_t processBiosEntries20Pass2(const char *hostname,
 	/* get the next event */
 	char *entryString = NULL;
 	size_t eventLength;
-	if (rc == 0) { 
+	if (rc == 0) {
 	    rc = JS_Cmd_GetEvent(&entryString,	/* freed @5 */
 				 eventNum,
 				 cmdJson);
@@ -3637,7 +3637,7 @@ static uint32_t processBiosEntries20Pass2(const char *hostname,
 	       below.  */
 	    if (rc != 0) {
 		rc = 0;		/* last event is not an error */
-		if (vverbose) printf("processBiosEntries20Pass2: done, no event %u\n", eventNum);  
+		if (vverbose) printf("processBiosEntries20Pass2: done, no event %u\n", eventNum);
 		break;			/* exit the BIOS event loop */
 	    }
 	}
@@ -3736,7 +3736,7 @@ static uint32_t processBiosEntries20Pass2(const char *hostname,
 		snprintf(eventString, sizeof(eventString), "%.*s", length, eventPtr);
 		/* FIXME factor this for all sql inserts, escape single quotes */
 		if (rc == 0) {
-		    size_t len = strlen(eventString) +1; 
+		    size_t len = strlen(eventString) +1;
 		    eventStringPtr = malloc(len);		/* freed @6 */
 		    if (eventStringPtr == NULL) {
 			printf("processBiosEntries20Pass2: Cannot alloc %lu for event\n", len);
@@ -3829,7 +3829,7 @@ static uint32_t processBiosEntries12Pass2(const char *hostname,
 	/* get the next event */
 	char *entryString = NULL;
 	size_t eventLength;
-	if (rc == 0) { 
+	if (rc == 0) {
 	    rc = JS_Cmd_GetEvent(&entryString,	/* freed @1 */
 				 eventNum,
 				 cmdJson);
@@ -3839,7 +3839,7 @@ static uint32_t processBiosEntries12Pass2(const char *hostname,
 	       below.  */
 	    if (rc != 0) {
 		rc = 0;		/* last event is not an error */
-		if (vverbose) printf("processBiosEntries12Pass2: done, no event %u\n", eventNum);  
+		if (vverbose) printf("processBiosEntries12Pass2: done, no event %u\n", eventNum);
 		break;			/* exit the BIOS event loop */
 	    }
 	}
@@ -3894,7 +3894,7 @@ static uint32_t processBiosEntries12Pass2(const char *hostname,
 					   event.eventDataSize);
 		}
 		if (rc == 0) {
-		    eventStringPtr = eventStringHexascii; 
+		    eventStringPtr = eventStringHexascii;
 		}
 	    }
 	    if (vverbose) printf("processBiosEntries12Pass2: event %u event %s\n",
@@ -3980,7 +3980,7 @@ static uint32_t processImaEntriesPass2(int *imasigver,
     uint32_t	vrc = 0;	/* errors in verification */
 
     *imasigver = TRUE;
-    
+
     unsigned char 	zeroDigest[TPM_SHA1_SIZE];	/* compare to SHA-1 digest in event log */
     if (rc == 0) {
 	if (verbose) printf("INFO: processImaEntriesPass2: "
@@ -3998,12 +3998,12 @@ static uint32_t processImaEntriesPass2(int *imasigver,
     unsigned char *eventFree = eventBin;	/* because IMA_Event_ReadBuffer moves the buffer */
     /* get endian'ness of client IMA event template data */
     int littleEndian = TRUE;
-    if (rc == 0) { 
+    if (rc == 0) {
 	rc = JS_Cmd_GetLittleEndian(&littleEndian,
 				    cmdJson);
 	rc = 0;	/* for backward compatibility, default to little endian if the client does not
 		   report it */
-    }    
+    }
     /* iterate through entries received from the client */
     for (eventNum = firstEventNum ; (rc == 0) && (firstEventNum <= lastEventNum) ; eventNum++) {
 
@@ -4015,17 +4015,17 @@ static uint32_t processImaEntriesPass2(int *imasigver,
 	free(eventFree);			/* @2 */
 	eventFree = NULL;
 	/* get the next IMA event from the client json */
-	if (rc == 0) { 
+	if (rc == 0) {
 	    vrc = JS_Cmd_GetImaEvent(&eventString,	/* freed @3 */
 				     eventNum,
 				     cmdJson);
 	    /* if there is no next event, done walking measurement list */
 	    if (vrc != 0) {	/* FIXME this should never happen */
-		if (vverbose) printf("processImaEntriesPass2: done, no event %u\n", eventNum);  
+		if (vverbose) printf("processImaEntriesPass2: done, no event %u\n", eventNum);
 		free(eventString);			/* @3 */
 		eventString = NULL;
 		break;
-	    } 
+	    }
 	}
 	/* errors cannot occur in the next few calls because they are the same as the first
 	   pass */
@@ -4120,7 +4120,7 @@ static uint32_t processImaEntriesPass2(int *imasigver,
 	/* FIXME this should be factored for all client data written to the DB */
 	char *filenameEscaped = NULL;
 	if (rc == 0) {
-	    size_t len = strlen(filename) +1; 
+	    size_t len = strlen(filename) +1;
 	    filenameEscaped = malloc(len);		/* freed @4 */
 	    if (filenameEscaped == NULL) {
 		printf("processImaEntriesPass2: Cannot alloc %lu for filename\n", len);
@@ -4154,7 +4154,7 @@ static uint32_t processImaEntriesPass2(int *imasigver,
 	}
 	if (rc == 0) {
 	    rc = SQ_Query(NULL, mysql, query);
-	    
+
 	}
 	IMA_Event_Free(&imaEvent);		/* @1 */
 	free(eventFree);			/* @2 */
@@ -4177,16 +4177,16 @@ static uint32_t processImaEntriesPass2(int *imasigver,
     }
     if (rc == 0) {
 	rc = SQ_Query(NULL, mysql, query);
-    }	
+    }
     return rc;
 }
 
 
 /* processEnrollRequest() handles the first client to server message for a client attestation key
    enrollment.
-   
+
    The client command is of the form:
-   
+
    {
    "command":"enrollrequest",
    "hostname":"cainl.watson.ibm.com",
@@ -4200,7 +4200,7 @@ static uint32_t processImaEntriesPass2(int *imasigver,
    "response":"enrollrequest",
    "credentialblob":"hexascii",
    "secret":"hexascii"
-   }   
+   }
 
 */
 
@@ -4241,7 +4241,7 @@ static uint32_t processEnrollRequest(unsigned char **rspBuffer,
     /* connect to the db */
     MYSQL *mysql = NULL;
     if (rc == 0) {
-	rc = SQ_Connect(&mysql);	/* closed @2 */	
+	rc = SQ_Connect(&mysql);	/* closed @2 */
     }
     /* get the DB information for this machine */
     if (rc == 0) {
@@ -4270,7 +4270,7 @@ static uint32_t processEnrollRequest(unsigned char **rspBuffer,
 	    if (akCertificatePem != NULL) {
 		printf("ERROR: processEnrollRequest: "
 		       "row for hostname %s already exists in machine table\n",
-		       hostname);  
+		       hostname);
 		rc = ACE_ENROLLED;
 	    }
 	    /* client hostname is already in DB, but enrollment is not valid.  If the client for
@@ -4278,11 +4278,11 @@ static uint32_t processEnrollRequest(unsigned char **rspBuffer,
 	    else {
 		printf("ERROR: processEnrollRequest: "
 		       "row for hostname %s is invalid in machine table\n",
-		       hostname);  
+		       hostname);
 		rc = SQ_RemoveMachineEntry(mysql, hostname);
 	    }
 	}
-    }    
+    }
     /* validate that the EK certificate came from an authentic TPM */
     TPMT_PUBLIC ekPub;	/* public part of client EK */
     X509 *ekX509Certificate = NULL;
@@ -4315,12 +4315,14 @@ static uint32_t processEnrollRequest(unsigned char **rspBuffer,
     /* validate the attestation key properties, but don't trust them yet */
     TPMT_PUBLIC attestPub;	/* unmarshaled structure */
     if (rc == 0) {
+	if (vverbose) printf("INFO: processEnrollRequest: Validate AK\n");
 	rc = validateAttestationKey(&attestPub,		/* returns unmarshaled structure */
 				    attestPubString);
     }
     TPM2B_DIGEST challenge;		/* symmetric key, use AES 256 */
     char *challengeString = NULL;
     if (rc == 0) {
+	if (vverbose) printf("INFO: processEnrollRequest: Generate Challenge\n");
 	rc = generateEnrollmentChallenge(&challenge,
 					 &challengeString);	/* freed @8 */
     }
@@ -4330,6 +4332,7 @@ static uint32_t processEnrollRequest(unsigned char **rspBuffer,
     TPM2B_ENCRYPTED_SECRET secret;
     /* run makecredential, wrap the symmetric key with the client EK public key, etc. */
     if (rc == 0) {
+	if (vverbose) printf("INFO: processEnrollRequest: Make Credential\n");
 	rc = generateCredentialBlob(&credentialBlobString,	/* freed @9 */
 				    &credentialBlob,
 				    &secretString,		/* freed @10 */
@@ -4374,7 +4377,7 @@ static uint32_t processEnrollRequest(unsigned char **rspBuffer,
 	else {
 	    rc1 = JS_Rsp_AddError(response, rc);
 	}
-	if (rc1 == 0) {	
+	if (rc1 == 0) {
 	    rc = JS_ObjectSerialize(rspLength,
 				    (char **)rspBuffer,	/* freed by caller */
 				    response);		/* @1 */
@@ -4402,9 +4405,9 @@ static uint32_t processEnrollRequest(unsigned char **rspBuffer,
 
 /* processEnrollRequest12() handles the first client to server message for a client attestation key
    enrollment.
-   
+
    The client command is of the form:
-   
+
    {
    "command":"enrollrequest12",
    "hostname":"cainl.watson.ibm.com",
@@ -4417,7 +4420,7 @@ static uint32_t processEnrollRequest(unsigned char **rspBuffer,
 
    "response":"enrollrequest12",
    "credentialblob":"hexascii",
-   }   
+   }
 */
 
 static uint32_t processEnrollRequest12(unsigned char **rspBuffer,
@@ -4457,7 +4460,7 @@ static uint32_t processEnrollRequest12(unsigned char **rspBuffer,
     /* connect to the db */
     MYSQL *mysql = NULL;
     if (rc == 0) {
-	rc = SQ_Connect(&mysql);	/* closed @2 */	
+	rc = SQ_Connect(&mysql);	/* closed @2 */
     }
     /* get the DB information for this machine */
     if (rc == 0) {
@@ -4486,7 +4489,7 @@ static uint32_t processEnrollRequest12(unsigned char **rspBuffer,
 	    if (akCertificatePem != NULL) {
 		printf("ERROR: processEnrollRequest12: "
 		       "row for hostname %s already exists in machine table\n",
-		       hostname);  
+		       hostname);
 		rc = ACE_ENROLLED;
 	    }
 	    /* client hostname is already in DB, but enrollment is not valid.  If the client for
@@ -4494,11 +4497,11 @@ static uint32_t processEnrollRequest12(unsigned char **rspBuffer,
 	    else {
 		printf("ERROR: processEnrollRequest12: "
 		       "row for hostname %s is invalid in machine table\n",
-		       hostname);  
+		       hostname);
 		rc = SQ_RemoveMachineEntry(mysql, hostname);
 	    }
 	}
-    }    
+    }
     /* validate that the EK certificate came from an authentic TPM */
     TPMT_PUBLIC ekPub;	/* public part of client EK */
     X509 *ekX509Certificate = NULL;
@@ -4523,7 +4526,7 @@ static uint32_t processEnrollRequest12(unsigned char **rspBuffer,
     if (rc == 0) {
 	rc = convertX509ToString(&ekCertificateX509String,	/* freed @7 */
 				 ekX509Certificate);
-    }     
+    }
     /* escape single quotes for SQL statement */
     if (rc == 0) {
 	rc = SQ_EscapeQuotes(&ekCertificateX509String);
@@ -4532,7 +4535,7 @@ static uint32_t processEnrollRequest12(unsigned char **rspBuffer,
     TPM_PUBKEY attestPub12;	/* unmarshaled structure */
     TPMT_PUBLIC attestPub20;
     if (rc == 0) {
-	rc = validateAttestationKey12(&attestPub20,	/* returns unmarshaled structures */	
+	rc = validateAttestationKey12(&attestPub20,	/* returns unmarshaled structures */
 				      &attestPub12,
 				      attestPubString12);
     }
@@ -4596,7 +4599,7 @@ static uint32_t processEnrollRequest12(unsigned char **rspBuffer,
 	else {
 	    rc1 = JS_Rsp_AddError(response, rc);
 	}
-	if (rc1 == 0) {	
+	if (rc1 == 0) {
 	    rc = JS_ObjectSerialize(rspLength,
 				    (char **)rspBuffer,	/* freed by caller */
 				    response);		/* @1 */
@@ -4626,7 +4629,7 @@ static uint32_t processEnrollRequest12(unsigned char **rspBuffer,
    enrollment.
 
    The client command is of the form:
-   
+
    {
    "command":"enrollcert",
    "hostname":"cainl.watson.ibm.com",
@@ -4647,7 +4650,7 @@ static uint32_t processEnrollCert(unsigned char **rspBuffer,
 {
     uint32_t  	rc = 0;		/* server error, should never occur, aborts processing */
     int		irc;
-    
+
     MYSQL_RES 		*machineResult = NULL;
     char 		*machineId = NULL;	/* row being updated */
 
@@ -4668,7 +4671,7 @@ static uint32_t processEnrollCert(unsigned char **rspBuffer,
     /* connect to the db */
     MYSQL *mysql = NULL;
     if (rc == 0) {
-	rc = SQ_Connect(&mysql);	/* closed @1 */	
+	rc = SQ_Connect(&mysql);	/* closed @1 */
     }
     /* get the DB information for this client machine.  If the client machine hostname is not in the
        DB, or if the enrollment is already valid, error. */
@@ -4697,7 +4700,7 @@ static uint32_t processEnrollCert(unsigned char **rspBuffer,
 	if (rc != 0) {
 	    printf("ERROR: "
 		   "processEnrollCert: hostname %s missing enrollment request\n",
-		   hostname);  
+		   hostname);
 	    rc = ACE_NO_ENROLL_REQ;
 	}
 	/* client machine hostname already enrolled. This indicates that the client sent an
@@ -4705,7 +4708,7 @@ static uint32_t processEnrollCert(unsigned char **rspBuffer,
 	else if (akCertificatePem != NULL) {
 	    printf("ERROR: "
 		   "processEnrollCert: hostname %s already enrolled\n",
-		   hostname);  
+		   hostname);
 	    rc = ACE_ENROLLED;
 	}
     }
@@ -4808,7 +4811,7 @@ static uint32_t processEnrollCert(unsigned char **rspBuffer,
 	else {
 	    rc1 = JS_Rsp_AddError(response, rc);
 	}
-	if (rc1 == 0) {	
+	if (rc1 == 0) {
 	    rc = JS_ObjectSerialize(rspLength,
 				    (char **)rspBuffer,	/* freed by caller */
 				    response);		/* @1 */
@@ -4871,7 +4874,7 @@ static uint32_t validateEkCertificate(TPMT_PUBLIC *ekPub,	/* output */
 	    int		irc;
 	    irc = X509_print_fp(stdout, *ekX509Certificate);
 	    if (irc != 1) {
-		printf("ERROR: convertPemToX509: Error in certificate print X509_print_fp()\n");
+		printf("ERROR: validateEkCertificate: Error in certificate print X509_print_fp()\n");
 		rc = ACE_INVALID_CERT;
 	    }
 	}
@@ -4907,36 +4910,78 @@ static uint32_t validateEkCertificate(TPMT_PUBLIC *ekPub,	/* output */
     */
     /* determine if the EK certificate is RSA or EC */
     int 		pkeyType;
+    int 		bits;			/* bits of public key */
     TPMI_RH_NV_INDEX	ekCertIndex;
+    EVP_PKEY 		*pkey = NULL;		/* freed @2 */
+    TPMI_ECC_CURVE 	curveID;
+    int 		privateKeyBytes;	/* for ECC */
+
     if (rc == 0) {
-	EVP_PKEY 		*pkey = NULL;
 	pkey = X509_get_pubkey(*ekX509Certificate);		/* freed @2 */
 	if (pkey != NULL) {
 	    pkeyType = getRsaPubkeyAlgorithm(pkey);
-	    if (pkeyType == EVP_PKEY_RSA) {
-		ekCertIndex = EK_CERT_RSA_INDEX;
-	    }
-	    else if (pkeyType ==  EVP_PKEY_EC) {
-		ekCertIndex = EK_CERT_EC_INDEX;
-	    }
-	    else {
-		printf("ERROR: validateEkCertificate: Public key is not RSA or EC\n");
-		rc = ACE_INVALID_CERT;
-	    }
-	    /* for TPM 2.0, standard X509, validate the certificate key usage */
-	    if (rc == 0) {
-		rc = verifyKeyUsage(*ekX509Certificate, pkeyType, vverbose);
-	    }
 	}
-	/* TPM 1.2 EK certificates have a non-standard OID, so X509_get_pubkey() fails.  However,
-	   TPM 1.2 is always RSA. */
 	else {
-	    pkeyType = EVP_PKEY_RSA;
-	    ekCertIndex = EK_CERT_RSA_INDEX;
+	    printf("ERROR: validateEkCertificate: Invalid EK certificate X509_get_pubkey\n");
+	    rc = ACE_INVALID_CERT;
 	}
-	EVP_PKEY_free(pkey);   		/* @2 */
     }
-    uint8_t *modulusBin = NULL;	
+    if (rc == 0) {
+	if (pkeyType == EVP_PKEY_RSA) {
+	    if (vverbose)
+		printf("validateEkCertificate: client EK certificate is RSA\n");
+	    if (rc == 0) {
+		bits = EVP_PKEY_get_bits(pkey);
+		if (vverbose)
+		    printf("validateEkCertificate: client EK certificate is %d bits\n", bits);
+	    }
+	    if (rc == 0) {
+		if (bits == 2048) {
+		    ekCertIndex = EK_CERT_RSA_INDEX;
+		}
+		else if (bits == 3072) {
+		    ekCertIndex = EK_CERT_RSA_3072_INDEX_H6;
+		}
+		else {
+		    printf("ERROR: validateEkCertificate: Invalid EK certificate bits\n");
+		    rc = ACE_INVALID_CERT;
+		}
+	    }
+	}
+	else if (pkeyType ==  EVP_PKEY_EC) {
+	    if (vverbose)
+		printf("validateEkCertificate: client EK certificate is ECC\n");
+	    if (rc == 0) {
+		rc = getEcCurve(&curveID,
+				&privateKeyBytes,
+				pkey);
+	    }
+	    if (rc == 0) {
+		switch (curveID) {
+		  case TPM_ECC_NIST_P256:
+		    ekCertIndex = EK_CERT_EC_INDEX;
+		    break;
+		  case TPM_ECC_NIST_P384:
+		    ekCertIndex = EK_CERT_ECC_NISTP384_INDEX_H3;
+		    break;
+		  default:
+		    printf("ERROR: validateEkCertificate: Invalid EK certificate curve\n");
+		    rc = ACE_INVALID_CERT;
+		}
+	    }
+	}
+	else {
+	    printf("ERROR: validateEkCertificate: Public key is not RSA or EC\n");
+	    rc = ACE_INVALID_CERT;
+	}
+    }
+    /* for TPM 2.0, standard X509, validate the certificate key usage */
+    if (rc == 0) {
+	rc = verifyKeyUsage(*ekX509Certificate, pkeyType, vverbose);
+    }
+    EVP_PKEY_free(pkey);   		/* @2 */
+
+    uint8_t *modulusBin = NULL;
     int modulusBytes;
     /* start with the default IWG template.  This may not be the actual client TPM EK template,
        but it's good enough to load the EK public part.  The server cannot, of course, use the
@@ -4949,20 +4994,38 @@ static uint32_t validateEkCertificate(TPMT_PUBLIC *ekPub,	/* output */
 				      vverbose);
     }
     if (rc == 0) {
-	if (pkeyType == EVP_PKEY_RSA) {
+	/* FIXME sanity check modulusBytes !!! */
+	switch (ekCertIndex) {
+	  case EK_CERT_RSA_INDEX:
 	    getRsaTemplate(ekPub);
-	    /* FIXME sanity check modulusBytes */
-	    ekPub->unique.rsa.t.size = modulusBytes;
 	    memcpy(&ekPub->unique.rsa.t.buffer, modulusBin, modulusBytes);
-	}
-	else {
+	    break;
+	  case EK_CERT_RSA_3072_INDEX_H6:
+	    getRsaHighTemplate(ekPub, ekCertIndex);
+	    memcpy(&ekPub->unique.rsa.t.buffer, modulusBin, modulusBytes);
+	    break;
+	  case EK_CERT_EC_INDEX:
 	    getEccTemplate(ekPub);
-	    /* FIXME sanity check modulusBytes */
-	    ekPub->unique.ecc.x.t.size = 32;	
-	    memcpy(&ekPub->unique.ecc.x.t.buffer, modulusBin +1, 32);	
-	    ekPub->unique.ecc.y.t.size = 32;	
-	    memcpy(&ekPub->unique.ecc.y.t.buffer, modulusBin +33, 32);	
-	    
+	    ekPub->unique.ecc.x.t.size = 32;
+	    ekPub->unique.ecc.y.t.size = 32;
+	    memcpy(&ekPub->unique.ecc.x.t.buffer,
+		   modulusBin +1,
+		   ekPub->unique.ecc.x.t.size);
+	    memcpy(&ekPub->unique.ecc.y.t.buffer,
+		   modulusBin  +1 + ekPub->unique.ecc.x.t.size,
+		   ekPub->unique.ecc.y.t.size);
+	    break;
+	  case EK_CERT_ECC_NISTP384_INDEX_H3:
+	    getEccHighTemplate(ekPub, ekCertIndex);
+	    ekPub->unique.ecc.x.t.size = 48;
+	    ekPub->unique.ecc.y.t.size = 48;
+	    memcpy(&ekPub->unique.ecc.x.t.buffer,
+		   modulusBin +1,
+		   ekPub->unique.ecc.x.t.size);
+	    memcpy(&ekPub->unique.ecc.y.t.buffer,
+		   modulusBin  +1 + ekPub->unique.ecc.x.t.size,
+		   ekPub->unique.ecc.y.t.size);
+	    break;
 	}
     }
     for (i = 0 ; i < rootFileCount ; i++) {
@@ -5018,17 +5081,19 @@ static uint32_t validateAttestationKey(TPMT_PUBLIC *attestPub,
 	if (attestPub->type == TPM_ALG_RSA) {
 	    b9 = (attestPub->parameters.rsaDetail.scheme.scheme != TPM_ALG_RSASSA);
 	    b10 = (attestPub->parameters.rsaDetail.scheme.details.rsassa.hashAlg != TPM_ALG_SHA256);
-	    b11 = (attestPub->parameters.rsaDetail.keyBits != 2048);
+	    b11 = ((attestPub->parameters.rsaDetail.keyBits != 2048) &&
+		   (attestPub->parameters.rsaDetail.keyBits != 3072));
 	    b12 = (attestPub->parameters.rsaDetail.exponent != 0);
 	}
 	if (attestPub->type == TPM_ALG_ECC) {
 	    b9 = attestPub->parameters.eccDetail.scheme.details.ecdsa.hashAlg != TPM_ALG_SHA256;
 	    b10 = attestPub->parameters.eccDetail.scheme.scheme != TPM_ALG_ECDSA;
-	    b11 = attestPub->parameters.eccDetail.curveID != TPM_ECC_NIST_P256;
+	    b11 = ((attestPub->parameters.eccDetail.curveID != TPM_ECC_NIST_P256) &&
+		   (attestPub->parameters.eccDetail.curveID != TPM_ECC_NIST_P384));
 	    b12 = attestPub->parameters.eccDetail.kdf.scheme != TPM_ALG_NULL;
 	}
 	if (b1 || b2 || b3 || b4 || b5 || b6 || b7 || b8 || b9 || b10 || b11 || b12) {
-	    printf("ERROR: validateAttestationKey: Invalid attest public key parameter\n");  
+	    printf("ERROR: validateAttestationKey: Invalid attest public key parameter\n");
 	    rc = ACE_INVALID_KEY;
 	}
     }
@@ -5072,15 +5137,15 @@ static uint32_t validateAttestationKey12(TPMT_PUBLIC *attestPub20,
     /* validate the attestation public key attributes */
     if (rc == 0) {
 	/* b TRUE is an error */
-	int b1 = (attestPub12->algorithmParms.algorithmID != TPM_ALG_RSA);  
-	int b2 = (attestPub12->algorithmParms.encScheme != TPM_ES_NONE);  
-	int b3 = (attestPub12->algorithmParms.sigScheme != TPM_SS_RSASSAPKCS1v15_SHA1);  
-	int b4 = (attestPub12->algorithmParms.parms.rsaParms.keyLength != 2048);  
-	int b5 = (attestPub12->algorithmParms.parms.rsaParms.numPrimes != 2);  
-	int b6 = (attestPub12->algorithmParms.parms.rsaParms.exponentSize != 0);  
+	int b1 = (attestPub12->algorithmParms.algorithmID != TPM_ALG_RSA);
+	int b2 = (attestPub12->algorithmParms.encScheme != TPM_ES_NONE);
+	int b3 = (attestPub12->algorithmParms.sigScheme != TPM_SS_RSASSAPKCS1v15_SHA1);
+	int b4 = (attestPub12->algorithmParms.parms.rsaParms.keyLength != 2048);
+	int b5 = (attestPub12->algorithmParms.parms.rsaParms.numPrimes != 2);
+	int b6 = (attestPub12->algorithmParms.parms.rsaParms.exponentSize != 0);
 	int b7 = (attestPub12->pubKey.keyLength != 256);
 	if (b1 || b2 || b3 || b4 || b5 || b6 || b7) {
-	    printf("ERROR: validateAttestationKey12: Invalid attest public key parameter\n");  
+	    printf("ERROR: validateAttestationKey12: Invalid attest public key parameter\n");
 	    rc = ACE_INVALID_KEY;
 	}
     }
@@ -5176,7 +5241,7 @@ static uint32_t generateAttestationCert(char **akX509CertString,	/* freed by cal
 	"IBM"			,
 	NULL			,
 	"AK CA"			,
-	NULL	
+	NULL
     };
     const char *pcaKeyPassword = PCA_PASSWORD;
     const char *pcaKeyFileName = PCA_KEY;
@@ -5189,7 +5254,7 @@ static uint32_t generateAttestationCert(char **akX509CertString,	/* freed by cal
     }
     /* the subject common name is the client hostname */
     if (rc == 0) {
-	subjectEntries[5] = (char *)hostname;	
+	subjectEntries[5] = (char *)hostname;
     }
     /* create the attestation key certificate from the attestation public key */
     if (rc == 0) {
@@ -5230,9 +5295,9 @@ static uint32_t generateCredentialBlob(char **credentialBlobString,	/* freed by 
 {
     uint32_t 		rc = 0;
     TPM_HANDLE 		keyHandle = 0;	/* loaded key handle */
-    
+
     if (vverbose) printf("generateCredentialBlob: Entry\n");
-    
+
     /* Start a TSS context to a local, server TPM */
     TSS_CONTEXT 	*tssContext = NULL;
     if (rc == 0) {
@@ -5241,9 +5306,10 @@ static uint32_t generateCredentialBlob(char **credentialBlobString,	/* freed by 
     /* load the attestation public key.  This uses the TPM to calculate the Name. */
     TPM2B_NAME 		name;		/* attestation key Name */
     if (rc == 0) {
+	if (vverbose) printf("generateCredentialBlob: Load AK\n");
 	rc = loadExternal(tssContext,
 			  &keyHandle,	/* attestation key handle */
-			  &name,		
+			  &name,
 			  attestPub);	/* attestation public key */
     }
     /* After the Name is returned, the loaded key is no longer needed. */
@@ -5254,6 +5320,7 @@ static uint32_t generateCredentialBlob(char **credentialBlobString,	/* freed by 
     }
     /* load the EK public key, storage key used by makecredential */
     if (rc == 0) {
+	if (vverbose) printf("generateCredentialBlob: Load EK\n");
 	rc = loadExternal(tssContext,
 			  &keyHandle,	/* EK handle */
 			  NULL,		/* don't need the Name */
@@ -5261,6 +5328,7 @@ static uint32_t generateCredentialBlob(char **credentialBlobString,	/* freed by 
     }
     /* makecredential, encrypt the challenge, etc */
     if (rc == 0) {
+	if (vverbose) printf("generateCredentialBlob: Make Credential\n");
 	rc = makecredential(tssContext,
 			    credentialBlob,
 			    secret,
@@ -5300,7 +5368,7 @@ static uint32_t generateCredentialBlob(char **credentialBlobString,	/* freed by 
 #ifdef TPM_TPM12
 
 /* generateCredentialBlob12() runs makecredential, wrap the challenge with the client EK public
-   key, etc.  
+   key, etc.
 
    attestPub - attestation public key
    ekPub - client EK public key
@@ -5332,7 +5400,7 @@ static uint32_t generateCredentialBlob12(uint8_t *encBlob,		/* hard coded 2048 b
     }
     /* create the TPM_EK_BLOB_ACTIVATE */
     if (rc == 0) {
-	a1Activate.tag = TPM_TAG_EK_BLOB_ACTIVATE; 
+	a1Activate.tag = TPM_TAG_EK_BLOB_ACTIVATE;
     }
     /* marshal the attestation TPM_PUBKEY before hashing */
     uint8_t aikPubkey[4096];	/* arbitrarily large */
@@ -5348,7 +5416,7 @@ static uint32_t generateCredentialBlob12(uint8_t *encBlob,		/* hard coded 2048 b
     /* hash the AIK TPM_PUBKEY and copy to idDigest */
     if (rc == 0) {
 	TPMT_HA pubkeyHash;
-	pubkeyHash.hashAlg = TPM_ALG_SHA1; 
+	pubkeyHash.hashAlg = TPM_ALG_SHA1;
 	rc = TSS_Hash_Generate(&pubkeyHash,
 			       aikPubLength, aikPubkey,
 			       0, NULL);
@@ -5417,17 +5485,17 @@ static uint32_t generateCredentialBlob12(uint8_t *encBlob,		/* hard coded 2048 b
 				  TPM_ALG_SHA1);	/* OAEP hash algorithm */
 	if (verbose) TSS_PrintAll("generateCredentialBlob12: TPM_EK_BLOB encrypted",
 				  encBlob, encBlobSize);
-    }    
+    }
     /* credentialBlob to string */
     if (rc == 0) {
 	rc = Array_PrintMalloc(credentialBlobString,		/* freed by caller */
 			       encBlob, encBlobSize);
     }
-    return rc; 
+    return rc;
 }
 
 #endif
-    
+
 /* makecredential() runs TPM2_MakeCredential
 
  */
@@ -5601,7 +5669,7 @@ uint32_t getImaPublicKeyIndex(uint32_t *noKey,
     int 	irc;
 
     *noKey	= TRUE;
-    
+
     /* FIXME magic numbers */
     if (vverbose) Array_Print(NULL, "getImaPublicKeyIndex: required signature fingerprint", TRUE,
 			      imaTemplateData->imaTemplateSIG.sigHeader + 3, 4);
@@ -5729,5 +5797,5 @@ static void printUsage(void)
     printf("\tFor debug, typically use http://localhost:80/chaincode.php\n");
     printf("\n");
 #endif
-    exit(1);	
+    exit(1);
 }

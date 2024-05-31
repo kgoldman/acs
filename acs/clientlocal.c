@@ -3,9 +3,8 @@
 /*		TPM 2.0 Attestation - Client Side Local Functions		*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: clientlocal.c 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016 - 2020					*/
+/* (c) Copyright IBM Corporation 2016 - 2024					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -79,7 +78,7 @@ extern int vverbose;
    creates an attestation key under that primary key.
 
    reads the EK certificate
-   
+
    /// Create enrollment data
    /// @param[out] tpmVendor Input is a minimum 5 char array, output is NUL terminated TPM Vendor
    /// @param[out] ekCertLength Byte length of ekCertificate
@@ -94,42 +93,42 @@ extern int vverbose;
 
 TPM_RC createEnrollmentData(char *tpmVendor,			/* freed by caller */
 			    uint16_t *ekCertLength,
-			    unsigned char **ekCertificate,	/* freed by caller */	
+			    unsigned char **ekCertificate,	/* freed by caller */
 			    TPM2B_PRIVATE *attestPriv,
 			    TPM2B_PUBLIC *attestPub,
 			    uint16_t *attestPubLength,
-			    unsigned char **attestPubBin,	/* freed by caller */	
+			    unsigned char **attestPubBin,	/* freed by caller */
 			    TPMI_RH_NV_INDEX nvIndex)
 {
     TPM_RC 		rc = 0;
     TSS_CONTEXT 	*tssContext = NULL;
-				   
+
     /* Start a TSS context */
     if (rc == 0) {
 	rc = TSS_Create(&tssContext);
     }
     /* get the TPM vendor */
     if (rc == 0) {
-	rc = getTpmVendor(tssContext, tpmVendor);	/* freed by caller */	
+	rc = getTpmVendor(tssContext, tpmVendor);	/* freed by caller */
     }
     /* does the SRK already exist */
     int exists;		/* flag, true if SRK exists */
     if (rc == 0) {
 	rc = getCapSrk(tssContext, &exists);
-    }    
+    }
     /* create the primary SRK if it does not exist */
     TPM_HANDLE 	srkHandle;	/* the loaded SRK transient handle */
     if ((rc == 0) && !exists) {
 	rc = createSrk(tssContext, &srkHandle);
-    }    
+    }
     /* make the SRK persistent in the TPM */
     if ((rc == 0) && !exists) {
 	rc = persistSrk(tssContext, srkHandle);
-    }    
+    }
     /* flush the transient copy of the SRK */
     if ((rc == 0) && !exists) {
 	rc = flushContext(tssContext, srkHandle);
-    }    
+    }
     /* Create the attestation signing key under the primary key */
     if (rc == 0) {
 	rc = createAttestationKey(tssContext,
@@ -157,7 +156,7 @@ TPM_RC createEnrollmentData(char *tpmVendor,			/* freed by caller */
 /* recoverAttestationKeyCertificate() recreates the primary EK, loads the attestation key pair, and
    then runs activate credential to recover the secret from the credential blob.
 
-   Returns the recovered symmetric key. 
+   Returns the recovered symmetric key.
 
    /// Recover attestation key certificate
    /// @param[out] certInfo Recovered symmetric key
@@ -190,24 +189,38 @@ TPM_RC recoverAttestationKeyCertificate(TPM2B_DIGEST 	*certInfo,
     }
     /* get the EK nonce, if it exists */
     unsigned char 	*nonce = NULL;
-    uint16_t 		nonceSize;
-    TPMI_RH_NV_INDEX 	ekNonceIndex;
-    TPMI_RH_NV_INDEX 	ekTemplateIndex;
+    uint16_t 		nonceSize = 0;
+    TPMI_RH_NV_INDEX 	ekNonceIndex = 0;
+    TPMI_RH_NV_INDEX 	ekTemplateIndex = 0;
+    TPMI_ALG_HASH  	sessionHashAlg;
     if (rc == 0) {
-	if (ekCertIndex == EK_CERT_RSA_INDEX) {
+	switch (ekCertIndex) {
+	  case EK_CERT_RSA_INDEX:
 	    ekNonceIndex = EK_NONCE_RSA_INDEX;
 	    ekTemplateIndex = EK_TEMPLATE_RSA_INDEX;
-	}
-	else if (ekCertIndex == EK_CERT_EC_INDEX) {
+	    sessionHashAlg = TPM_ALG_SHA256;
+	    break;
+	  case EK_CERT_EC_INDEX:
 	    ekNonceIndex = EK_NONCE_EC_INDEX;
 	    ekTemplateIndex = EK_TEMPLATE_EC_INDEX;
-	}
-	else {
-	    if (verbose) printf("ERROR: recoverAttestationKeyCertificate algoritm not supported\n");
+	    sessionHashAlg = TPM_ALG_SHA256;
+	    break;
+	  case EK_CERT_RSA_3072_INDEX_H6:
+	    ekNonceIndex = 0;
+	    ekTemplateIndex = 0;
+	    sessionHashAlg = TPM_ALG_SHA384;
+	    break;
+	  case EK_CERT_ECC_NISTP384_INDEX_H3:
+	    ekNonceIndex = 0;
+	    ekTemplateIndex = 0;
+	    sessionHashAlg = TPM_ALG_SHA384;
+	    break;
+	  default:
+	    if (verbose) printf("ERROR: recoverAttestationKeyCertificate algorithm not supported\n");
 	    rc = TPM_RC_VALUE;
 	}
     }
-    if (rc == 0) {
+    if ((rc == 0) && (ekNonceIndex != 0)) {
 	rc = processEKNonce(tssContext, &nonce, &nonceSize, /* freed @6 */
 			    ekNonceIndex, vverbose);
 	if ((rc & 0xff) == TPM_RC_HANDLE) {
@@ -218,7 +231,7 @@ TPM_RC recoverAttestationKeyCertificate(TPM2B_DIGEST 	*certInfo,
     }
     TPMT_PUBLIC 	tpmtPublicIn;		/* template */
     TPMT_PUBLIC 	tpmtPublicOut;		/* primary key */
-    if (rc == 0) {
+    if ((rc == 0) && (ekTemplateIndex != 0)) {
 	/* if the nonce was found, get the EK template.  */
 	if (nonce != NULL) {
 	    rc = processEKTemplate(tssContext, &tpmtPublicIn, ekTemplateIndex, vverbose);
@@ -242,12 +255,12 @@ TPM_RC recoverAttestationKeyCertificate(TPM2B_DIGEST 	*certInfo,
 			    ekKeyHandle);
     }
     /* load the attestation key saved in a file in the previous protocol step */
-    TPMI_DH_OBJECT activateHandle = 0;	
+    TPMI_DH_OBJECT activateHandle = 0;
     if (rc == 0) {
 	rc = loadObject(tssContext,		/* flushed @7 */
 			&activateHandle,	/* loaded attestation key handle */
 			attestPriv,
-			attestPub);	
+			attestPub);
     }
     if (rc == 0) {
 	if (verbose) printf("INFO: recoverAttestationKeyCertificate: Attestation key %08x\n",
@@ -260,6 +273,8 @@ TPM_RC recoverAttestationKeyCertificate(TPM2B_DIGEST 	*certInfo,
 				certInfo,		/* the symmetric key */
 				activateHandle,
 				ekKeyHandle,
+				ekCertIndex,
+				sessionHashAlg,
 				credentialBlobBin,
 				credentialBlobBinSize,
 				secretBin,
@@ -323,7 +338,7 @@ TPM_RC runQuote(TPM2B_ATTEST *quoted,
     TPM_RC 		rc1;
     TSS_CONTEXT		*tssContext = NULL;
     TPM_HANDLE 		keyHandle = 0;
-    
+
     /* Start a TSS context */
     if (rc == 0) {
 	rc = TSS_Create(&tssContext);
@@ -341,10 +356,10 @@ TPM_RC runQuote(TPM2B_ATTEST *quoted,
 		       quoted,
 		       signature,
 		       keyHandle,
-		       type, 
+		       type,
 		       nonceBin, nonceLen,
 		       pcrSelection);
-    }   
+    }
     /* flush the quote signing key */
     if ((tssContext != NULL) && (keyHandle != 0)) {
 	rc1 = flushContext(tssContext,
@@ -374,7 +389,7 @@ TPM_RC runQuote(TPM2B_ATTEST *quoted,
    /// @param[out] auditInfo from TPM
    /// @param[out] signature Quote signature from TPM
    /// @param[out] boottimeString Boot time as a string
-   /// @param[in] boottimeStringLen Maximum byte length of boottimeString 
+   /// @param[in] boottimeStringLen Maximum byte length of boottimeString
    /// @param[in] nonceBin Nonce supplied by server
    /// @param[in] nonceLen Byte length of nonceBin
    /// @param[in] pcrSelection PCRs to retrieve
@@ -398,7 +413,7 @@ TPM_RC runAudit(TPML_PCR_BANKS *pcrBanks,
     TSS_CONTEXT			*tssContext = NULL;
     TPM_HANDLE 			keyHandle = 0;
     TPMI_SH_AUTH_SESSION 	sessionHandle = 0;
-    
+
     /* Start a TSS context */
     if (rc == 0) {
 	rc = TSS_Create(&tssContext);
@@ -431,7 +446,7 @@ TPM_RC runAudit(TPML_PCR_BANKS *pcrBanks,
 			    type,
 			    sessionHandle,
 			    nonceBin, nonceLen);
-    }   
+    }
     /* flush the quote signing key */
     if ((tssContext != NULL) && (keyHandle != 0)) {
 	rc1 = flushContext(tssContext,
@@ -556,4 +571,3 @@ uint32_t getBootTime(char *boottime,
     }
     return rc;
 }
-

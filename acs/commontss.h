@@ -3,9 +3,8 @@
 /*		TPM 2.0 Attestation - Common TSS Functions	  		*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: commontss.h 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016 - 2020.					*/
+/* (c) Copyright IBM Corporation 2016 - 2024.					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -63,17 +62,23 @@ TPM_RC loadObject(TSS_CONTEXT 	*tssContext,
 TPM_RC activatecredential(TSS_CONTEXT *tssContext,
 			  TPM2B_DIGEST *certInfo,
 			  TPM_HANDLE activateHandle,
-			  TPM_HANDLE keyHandle,
+			  TPM_HANDLE ekKeyHandle,
+			  TPMI_RH_NV_INDEX ekCertIndex,
+			  TPMI_ALG_HASH  sessionHashAlg,
 			  unsigned char *credentialBlobBin,
 			  size_t credentialBlobBinSize,
 			  unsigned char *secretBin,
 			  size_t secretBinSize);
 TPM_RC makePolicySession(TSS_CONTEXT *tssContext,
-			 TPMI_SH_AUTH_SESSION *sessionHandle);
+			 TPMI_SH_AUTH_SESSION *sessionHandle,
+			 TPMI_ALG_HASH sessionHashAlg);
 TPM_RC makeHmacSession(TSS_CONTEXT *tssContext,
 		       TPMI_SH_AUTH_SESSION *sessionHandle);
 TPM_RC policySecret(TSS_CONTEXT *tssContext,
 		    TPMI_SH_AUTH_SESSION sessionHandle);
+TPM_RC policyB(TSS_CONTEXT *tssContext,
+	       TPMI_SH_AUTH_SESSION sessionHandle,
+	       TPMI_ALG_HASH sessionHashAlg);
 TPM_RC flushContext(TSS_CONTEXT 	*tssContext,
 		    TPM_HANDLE 		handle);
 TPM_RC policyPCR(TSS_CONTEXT 		*tssContext,

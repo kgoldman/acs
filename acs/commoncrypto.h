@@ -3,9 +3,8 @@
 /*		 	TPM 2.0 Attestation - Common Crypto	  		*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: commoncrypto.h 1094 2017-11-08 21:50:29Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016.						*/
+/* (c) Copyright IBM Corporation 2016 - 2024					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -67,5 +66,9 @@ uint32_t aesdecrypt(unsigned char **decData,
 		    const unsigned char *encData,
 		    uint32_t encDataLen,
 		    TPM2B_DIGEST *decryptionKey);
+
+TPM_RC getEcCurve(TPMI_ECC_CURVE *curveID,
+		  int 		*privateKeyBytes,
+		  const EVP_PKEY *ecKey);
 
 #endif
