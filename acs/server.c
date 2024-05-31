@@ -4998,6 +4998,7 @@ static uint32_t validateEkCertificate(TPMT_PUBLIC *ekPub,	/* output */
 	  case EK_CERT_RSA_INDEX:
 	    getRsaTemplate(ekPub);
 	    if (modulusBytes == 256) {
+		ekPub->unique.rsa.t.size = modulusBytes;
 		memcpy(&ekPub->unique.rsa.t.buffer, modulusBin, modulusBytes);
 	    }
 	    else {
@@ -5009,6 +5010,7 @@ static uint32_t validateEkCertificate(TPMT_PUBLIC *ekPub,	/* output */
 	  case EK_CERT_RSA_3072_INDEX_H6:
 	    getRsaHighTemplate(ekPub, ekCertIndex);
 	    if (modulusBytes == 384) {
+		ekPub->unique.rsa.t.size = modulusBytes;
 		memcpy(&ekPub->unique.rsa.t.buffer, modulusBin, modulusBytes);
 	    }
 	    else {
@@ -5053,6 +5055,10 @@ static uint32_t validateEkCertificate(TPMT_PUBLIC *ekPub,	/* output */
 		       ekPub->unique.ecc.y.t.size);
 	    }
 	    break;
+	  default:
+	    printf("ERROR: validateEkCertificate: Invalid EK cert index %08x\n",
+		   ekCertIndex);
+	    rc = ACE_INVALID_CERT;
 	}
     }
     for (i = 0 ; i < rootFileCount ; i++) {

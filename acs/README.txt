@@ -1,4 +1,3 @@
-$Id: README.txt 1669 2021-05-21 22:19:52Z kgoldman $
 Written by Ken Goldman
 IBM Thomas J. Watson Research Center
 
@@ -456,17 +455,17 @@ to hang.  Creating a primary key on a hardware TPM is a long calculation.
 This installs the client attestation key certificate at the
 attestation server.
 
-zTPM 2.0
+TPM 2.0
 - - - -
 
 > clientenroll -alg rsa -v -ho cainl.watson.ibm.com -co akcert.pem >! clientenroll.log4j
 
-or a different machine with EC
+or a different machine with EC. rsa takes an optional bit strength value.
 
 > clientenroll -alg ec -v -ho cainl.watson.ibm.com -ma cainlec.watson.ibm.com -co akeccert.pem >! clientenroll.log4j
 
 where -ho is the hostname of the server, and is optional for
-localhost.
+localhost. ec takes an optional curve specifier.
 
 -v and piping to a file are optional.
 

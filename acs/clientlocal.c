@@ -142,6 +142,10 @@ TPM_RC createEnrollmentData(char *tpmVendor,			/* freed by caller */
 			      ekCertificate,		/* freed by caller */
 			      ekCertLength,		/* total size read */
 			      nvIndex);			/* RSA or EC */
+	if (rc != 0) {
+	    if (verbose) printf("ERROR: createEnrollmentData: EK certificate not found at %08x\n",
+				nvIndex);
+	}
     }
     {
 	TPM_RC rc1 = TSS_Delete(tssContext);
