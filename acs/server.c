@@ -4931,7 +4931,7 @@ static uint32_t validateEkCertificate(TPMT_PUBLIC *ekPub,	/* output */
 	    if (vverbose)
 		printf("validateEkCertificate: client EK certificate is RSA\n");
 	    if (rc == 0) {
-		bits = EVP_PKEY_get_bits(pkey);
+		bits = EVP_PKEY_bits(pkey);
 		if (vverbose)
 		    printf("validateEkCertificate: client EK certificate is %d bits\n", bits);
 	    }

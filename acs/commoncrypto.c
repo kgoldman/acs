@@ -45,7 +45,6 @@
 #include <openssl/aes.h>
 
 #include <openssl/evp.h>
-#include <openssl/core_names.h>
 
 #include <ibmtss/tss.h>
 #include <ibmtss/tssutils.h>
@@ -233,7 +232,7 @@ uint32_t aesdecrypt(unsigned char **decData,   		/* output decrypted data, calle
 	/* sanity check the pad */
 	for (i = 0 ; i < padLength ; i++, padData++) {
 	    if (*padData != padLength) {
-		if (vverbose) printf("aesdecrypt: Error, bad pad %02x at index %u\n",
+		printf("ERROR: aesdecrypt: Error, bad pad %02x at index %u\n",
 		       *padData, i);
 		rc = ACE_OSSL_AES;
 	    }
@@ -248,39 +247,52 @@ uint32_t aesdecrypt(unsigned char **decData,   		/* output decrypted data, calle
    NOTE: OpenSSL 3.x specific, taken from cryptoutils.c
 */
 
-
 TPM_RC getEcCurve(TPMI_ECC_CURVE *curveID,
 		  int 		*privateKeyBytes,
-		  const EVP_PKEY *ecKey)
+		  const EVP_PKEY *ecPKey)
 {
-    TPM_RC  	rc = 0;
-    int		irc;
-    char 	curveName[64];
+    TPM_RC  		rc = 0;
+    int			nid;
+    const EC_KEY 	*ecKey = NULL;
+    const EC_GROUP	*ecGroup = NULL;
 
+    /* get the EC_KEY key from the EVP_PKEY */
     if (rc == 0) {
-	irc = EVP_PKEY_get_utf8_string_param(ecKey, OSSL_PKEY_PARAM_GROUP_NAME,
-					     curveName, sizeof(curveName), NULL);
-	if (irc != 1) {
-	    printf("getEcCurve: Error getting curve\n");
+#if OPENSSL_VERSION_NUMBER < 0x30000000L
+	/* pre-OpenSSL 3.0.0 did not use the const qualifier */
+	(EC_KEY *)(ecKey = EVP_PKEY_get0_EC_KEY((EVP_PKEY *)ecPKey));	/* do not free */
+#else 
+	ecKey = EVP_PKEY_get0_EC_KEY(ecPKey);		/* do not free */
+#endif
+	//#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+	if (ecKey == NULL) {
+	    printf("ERROR: getEcCurve: Error in EVP_PKEY_get0_EC_KEY()\n");
 	    rc = TSS_RC_EC_KEY_CONVERT;
 	}
     }
-    /* FIXME make table */
+    /* get the EC_GROUP	from the EC_KEY */
     if (rc == 0) {
-	if (strcmp(curveName, "prime256v1") == 0) {
-	    *curveID = TPM_ECC_NIST_P256;
-	    *privateKeyBytes = 32;
-	}
-	else if (strcmp(curveName, "secp384r1") == 0) {
-	    *curveID = TPM_ECC_NIST_P384;
-	    *privateKeyBytes = 48;
-	}
-	else {
-	    printf("getEcCurve: Error, curve %s not supported \n", curveName);
+	ecGroup = EC_KEY_get0_group(ecKey);		/* 3 uses const do not free */
+	if (ecGroup == NULL) {
+	    printf("ERROR: getEcCurve: Error extracting EC group from EC public key\n");
 	    rc = TSS_RC_EC_KEY_CONVERT;
-
+	}
+    }
+    if (rc == 0) {
+	nid = EC_GROUP_get_curve_name(ecGroup);
+	switch (nid) {
+	  case NID_X9_62_prime256v1:
+	    *curveID = TPM_ECC_NIST_P256;		/* TCG standard */
+	    *privateKeyBytes = 32;
+	    break;
+	  case NID_secp384r1:
+	    *curveID = TPM_ECC_NIST_P384;		/* TCG standard */
+	    *privateKeyBytes = 48;
+	    break;
+	  default:
+	    printf("ERROR: getEcCurve: Error, nid %d not supported\n", nid);
+	    rc = TSS_RC_EC_KEY_CONVERT;
 	}
     }
     return rc;
 }
-
