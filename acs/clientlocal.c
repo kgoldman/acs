@@ -157,6 +157,76 @@ TPM_RC createEnrollmentData(char *tpmVendor,			/* freed by caller */
     return rc;
 }
 
+/* getIntermediateCertificate()
+
+   reads the EK intermadiate CA certificates
+
+   /// reads the EK intermadiate CA certificates
+   /// @param[out] intermediateCertLength Byte length of Certificate
+   /// @param[out] intermediateCert marshaled Certificate, buffer must be freed by caller
+*/
+
+TPM_RC getIntermediateCertificate(uint16_t *intermediateCertLength,
+				  unsigned char **intermediateCert)	/* freed by caller */
+{
+    TPM_RC 		rc = 0;
+    int 		done = FALSE;
+    TPMI_RH_NV_INDEX 	nvIndex;
+    TSS_CONTEXT 	*tssContext = NULL;
+    uint16_t 		tmpLength = 0;
+    unsigned char 	*tmpBuffer = NULL;
+
+    /* typically there are no intermediate certificates */
+    *intermediateCertLength = 0;
+    *intermediateCert = NULL;
+
+    /* Start a TSS context */
+    if (rc == 0) {
+	rc = TSS_Create(&tssContext);
+    }
+    for (nvIndex = INTERMEDIATE_CERT_INDEX ; (rc == 0) && !done ; nvIndex++) {
+
+	if (vverbose) printf("getIntermediateCertificate: reading %08x\n", nvIndex);
+	rc = getIndexContents(tssContext,
+			      &tmpBuffer ,		/* freed @1 */
+			      &tmpLength,		/* total size read */
+			      nvIndex);
+	/* keep reading until the NV index is not defined */
+	/* 0x3f is rc, 80 is FMT_1 */
+	if ((rc & 0x00bf) == TPM_RC_HANDLE) {
+	    done = TRUE;
+	    rc = 0;		/* not found is not an error */
+	    if (vverbose) printf("getIntermediateCertificate: not found at %08x\n",
+				 nvIndex);
+	}
+	else if (rc != 0) {
+	    if (verbose) printf("ERROR: getIntermediateCertificate: reading %08x\n",
+				nvIndex);
+	}
+	/* append the certificate to the buffer */
+	else {
+	    if (vverbose) printf("getIntermediateCertificate: read %hu bytes\n", tmpLength);
+	    if (rc == 0) {
+		rc = TSS_Realloc(intermediateCert, *intermediateCertLength + tmpLength);
+	    }
+	    if (rc == 0) {
+		memcpy(*intermediateCert + *intermediateCertLength, tmpBuffer, tmpLength);
+		*intermediateCertLength += tmpLength;
+		free(tmpBuffer);		/* @1 */
+		tmpBuffer = NULL;
+	    }
+	}
+    }
+    {
+	TPM_RC rc1 = TSS_Delete(tssContext);
+	tssContext = NULL;
+	if (rc == 0) {
+	    rc = rc1;
+	}
+    }
+    return rc;
+}
+
 /* recoverAttestationKeyCertificate() recreates the primary EK, loads the attestation key pair, and
    then runs activate credential to recover the secret from the credential blob.
 
@@ -227,7 +297,7 @@ TPM_RC recoverAttestationKeyCertificate(TPM2B_DIGEST 	*certInfo,
     if ((rc == 0) && (ekNonceIndex != 0)) {
 	rc = processEKNonce(tssContext, &nonce, &nonceSize, /* freed @6 */
 			    ekNonceIndex, vverbose);
-	if ((rc & 0xff) == TPM_RC_HANDLE) {
+	if ((rc & 0x00bf) == TPM_RC_HANDLE) {
 	    if (verbose) printf("INFO: recoverAttestationKeyCertificate: "
 				"EK nonce not found, use default template\n");
 	    rc = 0;

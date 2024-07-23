@@ -205,6 +205,7 @@ static uint32_t processEnrollRequest(unsigned char **rspBuffer,
 static uint32_t validateEkCertificate(TPMT_PUBLIC *ekPub,
 				      X509 **ekX509Certificate,
 				      const char *ekCertString,
+				      const char *intermediateCertString,
 				      const char *listFilename);
 static uint32_t validateAttestationKey(TPMT_PUBLIC *attestPub,
 				       const char *attestPubString);
@@ -4212,6 +4213,7 @@ static uint32_t processImaEntriesPass2(int *imasigver,
    "hostname":"cainl.watson.ibm.com",
    "tpmvendor":"IBM ",
    "ekcert":"hexascii",
+   "intermediatecert":"hexascii",	(optional)
    "akpub":"hexascii"
    }
 
@@ -4249,6 +4251,15 @@ static uint32_t processEnrollRequest(unsigned char **rspBuffer,
     const char *ekCertString = NULL;	/* hexascii */
     if (rc == 0) {
 	rc = JS_ObjectGetString(&ekCertString, "ekcert", ACS_JSON_PEMCERT_MAX, cmdJson);
+    }
+    const char *intermediateCertString = NULL;	/* hexascii */
+    if (rc == 0) {
+	rc = JS_ObjectGetString(&intermediateCertString , "intermediatecert",
+				ACS_JSON_PEMCERT_MAX, cmdJson);
+	if (rc == ACE_JSON_KEY) {
+	    intermediateCertString = NULL;
+	    rc = 0;	/* intermediate certificate is optional */
+	}
     }
     /* get the client attestation key TPMT_PUBLIC from the command */
     const char *attestPubString = NULL;
@@ -4310,6 +4321,7 @@ static uint32_t processEnrollRequest(unsigned char **rspBuffer,
 	rc = validateEkCertificate(&ekPub,		/* output, TPMT_PUBLIC */
 				   &ekX509Certificate,	/* output, X509, freed @5 */
 				   ekCertString,	/* hexascii */
+				   intermediateCertString,	/* hexascii or NULL */
 				   listFilename);
     }
     /* convert EK certificate X509 to PEM */
@@ -4529,6 +4541,7 @@ static uint32_t processEnrollRequest12(unsigned char **rspBuffer,
 	rc = validateEkCertificate(&ekPub,		/* output, TPMT_PUBLIC */
 				   &ekX509Certificate,	/* output, X509, freed @5 */
 				   ekCertString,	/* hexascii */
+				   NULL,		/* intermediateCertString */
 				   listFilename);
     }
     /* convert EK certificate X509 to PEM */
@@ -4861,6 +4874,7 @@ static uint32_t processEnrollCert(unsigned char **rspBuffer,
 static uint32_t validateEkCertificate(TPMT_PUBLIC *ekPub,	/* output */
 				      X509 **ekX509Certificate,	/* output, freed by caller */
 				      const char *ekCertString,	/* hexascii */
+				      const char *intermediateCertString, /* hexascii */
 				      const char *listFilename)
 {
     uint32_t 		rc = 0;
@@ -4901,6 +4915,53 @@ static uint32_t validateEkCertificate(TPMT_PUBLIC *ekPub,	/* output */
 	printf("validateEkCertificate: "
 	       "Build the EK certificate root certificate store\n");
     }
+    uint8_t *intermediateCertBin = NULL;
+    size_t intermediateCertBinLen;
+    X509 *intermediateX509Certificate;
+    unsigned int intermediateCertCount = 0;
+    if (intermediateCertString != NULL) {
+	/*
+	  convert the intermediate certificate string to an X509 structure
+	*/
+	if (vverbose) printf("validateEkCertificate: "
+			     "Convert intermediate certificate string to X509 structure\n");
+	/* convert intermediate certificate string to binary */
+	if (rc == 0) {
+	    rc = Array_Scan(&intermediateCertBin,	/* output binary, freed @5 */
+			    &intermediateCertBinLen,
+			    intermediateCertString);	/* input string */
+	}
+	/* FIXME handle chain, make array */
+	/* unmarshal the intermediate certificate DER stream to intermediate certificate X509
+	   structure */
+	if (rc == 0) {
+	    unsigned char *tmpCert = intermediateCertBin;  /* temp because d2i moves the pointer */
+	    intermediateX509Certificate = d2i_X509(NULL,		/* freed @6 */
+						   (const unsigned char **)&tmpCert,
+						   intermediateCertBinLen);
+	    if (intermediateX509Certificate == NULL) {
+		printf("ERROR: validateEkCertificate: "
+		       "Could not parse X509 intermediate certificate\n");
+		rc = ACE_INVALID_CERT;
+	    }
+	}
+	if (rc == 0) {
+	    if (vverbose) {
+		int		irc;
+		irc = X509_print_fp(stdout, intermediateX509Certificate);
+		if (irc != 1) {
+		    printf("ERROR: validateEkCertificate: "
+			   "Error in certificate print X509_print_fp()\n");
+		    rc = ACE_INVALID_CERT;
+		}
+	    }
+	    printf("validateEkCertificate: "
+		   "Build the EK certificate root certificate store\n");
+	}
+	if (rc == 0) {
+	    intermediateCertCount++;
+	}
+    }
     /* get the TPM vendor root certificates */
     char		*rootFilename[MAX_ROOTS];
     unsigned int	rootFileCount = 0;
@@ -4920,10 +4981,12 @@ static uint32_t validateEkCertificate(TPMT_PUBLIC *ekPub,	/* output */
     }
     /* validate the EK certificate against the root */
     if (rc == 0) {
-	rc = verifyCertificate(*ekX509Certificate,
-			       (const char **)rootFilename,
-			       rootFileCount,
-			       vverbose);
+	rc = verifyCertificateI(*ekX509Certificate,
+				&intermediateX509Certificate,
+				intermediateCertCount,
+				(const char **)rootFilename,
+				rootFileCount,
+				vverbose);
     }
     /*
       construct the TPMT_PUBLIC for the EK public key
@@ -5086,6 +5149,10 @@ static uint32_t validateEkCertificate(TPMT_PUBLIC *ekPub,	/* output */
     }
     free(modulusBin);			/* @3 */
     free(ekCertBin);			/* @4 */
+    free(intermediateCertBin);		/* @5 */
+    if (intermediateX509Certificate != NULL) {
+	X509_free(intermediateX509Certificate);   /* @6 */
+    }
     return rc;
 }
 

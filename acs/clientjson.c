@@ -419,12 +419,14 @@ void JS_Cmd_AddHostname(json_object *command, const char *machineName)
    "hostname":"name",
    "tpmvendor":vendor",
    "ekcert":"hexascii",
+   "intermediatecert":"hexascii",	(optional)
    "akpub":"hexascii"
    }
 
    where
 
    ekcert is the TPM EK certificate
+   intermediatecert is the TPM EK intermediate CA certificate
    akpub is a marahalled TPMT_PUBLIC
 
 */
@@ -434,12 +436,13 @@ uint32_t JS_Cmd_EnrollRequest(uint32_t *length,
 			      const char *commandString,	/* TPM 1.2 or 2.0 */
 			      const char *tpmVendor,
 			      const char *ekCertificateString,
+			      const char *intermediateCertificateString,
 			      const char *attestPubString,
     			      const char *machineName)
 {
     int rc = 0;
     json_object *command = NULL;
-    
+
     if (rc == 0) {
 	rc = JS_ObjectNew(&command);		/* freed @1 */
     }
@@ -450,6 +453,10 @@ uint32_t JS_Cmd_EnrollRequest(uint32_t *length,
 	JS_Cmd_AddHostname(command, machineName);
 	json_object_object_add(command, "tpmvendor", json_object_new_string(tpmVendor));
 	json_object_object_add(command, "ekcert", json_object_new_string(ekCertificateString));
+	if (intermediateCertificateString != NULL) {
+	    json_object_object_add(command, "intermediatecert",
+				   json_object_new_string(intermediateCertificateString));
+	}
 	json_object_object_add(command, "akpub", json_object_new_string(attestPubString));
     }
     if (rc == 0) {

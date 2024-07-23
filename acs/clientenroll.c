@@ -85,6 +85,8 @@ static TPM_RC sendEnrollRequest(json_object **enrollResponseJson,
 				const char *tpmVendor,
 				uint32_t ekCertLength,
 				unsigned char *ekCertificate,
+				uint32_t intermediateCertLength,
+				unsigned char *intermediateCert,
 				uint16_t attestPubLength,
 				unsigned char *attestPub);
 static TPM_RC validateCertificate(const char *certificateFilename);
@@ -298,6 +300,8 @@ int main(int argc, char *argv[])
     char 		tpmVendor[5];
     uint16_t 		ekCertLength;
     unsigned char 	*ekCertificate = NULL;			/* freed @3 */
+    uint16_t 		intermediateCertLength;
+    unsigned char 	*intermediateCert = NULL;		/* freed @5 */
     TPM2B_PRIVATE 	attestPriv;
     TPM2B_PUBLIC 	attestPub;				/* marshalled TPMT_PUBLIC */
     uint16_t 		attestPubLength;
@@ -310,6 +314,10 @@ int main(int argc, char *argv[])
 				  &attestPubLength, &attestPubBin,	/* freed @4 */
 				  ekCertIndex);
     }
+    if (rc == 0) {
+	rc = getIntermediateCertificate(&intermediateCertLength,
+					&intermediateCert);	/* freed &5 */
+    }
     /* send the enrollment data to the server */
     json_object *enrollResponseJson = NULL;
     if (rc == 0) {
@@ -319,6 +327,7 @@ int main(int argc, char *argv[])
 			       machineName,
 			       tpmVendor,
 			       ekCertLength, ekCertificate,
+			       intermediateCertLength, intermediateCert,
 			       attestPubLength, attestPubBin);
     }
     /* Activate credential on the challenge. Send the challenge back to the server.  Process the AK
@@ -353,6 +362,7 @@ int main(int argc, char *argv[])
     JS_ObjectFree(enrollCertResponseJson);	/* @2 */
     free(ekCertificate);			/* @3 */
     free(attestPubBin);				/* @4 */
+    free(intermediateCert);			/* @5 */
     return rc;
 }
 
@@ -363,6 +373,7 @@ int main(int argc, char *argv[])
    "hostname":"name",
    "tpmvendor":vendor",
    "ekcert":"hexascii",
+   "intermediatecert":"hexascii",	(optional)
    "akpub":"hexascii"
    }
 */
@@ -374,6 +385,8 @@ static TPM_RC sendEnrollRequest(json_object **enrollResponseJson,	/* freed by ca
 				const char *tpmVendor,
 				uint32_t ekCertLength,
 				unsigned char *ekCertificate,		/* EK certificate */
+				uint32_t intermediateCertLength,
+				unsigned char *intermediateCert,	/* Intermediate CA cert */
 				uint16_t attestPubLength,
 				unsigned char *attestPub)		/* Attestation public key */
 {
@@ -382,8 +395,9 @@ static TPM_RC sendEnrollRequest(json_object **enrollResponseJson,	/* freed by ca
     uint8_t 		*cmdBuffer = NULL;			/* freed @1 */
     uint32_t 		rspLength;
     uint8_t 		*rspBuffer = NULL;			/* freed @2 */
-    char		*ekCertificateString = NULL;
-    char		*attestPubString = NULL;
+    char		*ekCertificateString = NULL;		/* freed @3 */
+    char		*intermediateCertificateString = NULL;	/* freed @4 */
+    char		*attestPubString = NULL;		/* freed @5 */
 
     if (vverbose) printf("INFO: sendEnrollRequest\n");
     /* convert the EK certificate to string */
@@ -392,9 +406,17 @@ static TPM_RC sendEnrollRequest(json_object **enrollResponseJson,	/* freed by ca
 			       ekCertificate,
 			       ekCertLength);
     }
+    /* convert the intermediate CA certificate to string */
+    if (rc == 0) {
+	if (intermediateCert != NULL) {
+	    rc = Array_PrintMalloc(&intermediateCertificateString,	/* freed @4 */
+				   intermediateCert,
+				   intermediateCertLength);
+	}
+    }
     /* convert the Attestation public key to string */
     if (rc == 0) {
-	rc = Array_PrintMalloc(&attestPubString,		/* freed @4 */
+	rc = Array_PrintMalloc(&attestPubString,		/* freed @5 */
 			       attestPub,
 			       attestPubLength);
     }
@@ -405,6 +427,7 @@ static TPM_RC sendEnrollRequest(json_object **enrollResponseJson,	/* freed by ca
 				  "enrollrequest",
 				  tpmVendor,
 				  ekCertificateString,
+				  intermediateCertificateString,
 				  attestPubString,
 				  machineName);
     }
@@ -423,10 +446,11 @@ static TPM_RC sendEnrollRequest(json_object **enrollResponseJson,	/* freed by ca
     if (rc == 0) {
 	if (verbose) JS_ObjectTrace("INFO: sendEnrollRequest: response", *enrollResponseJson);
     }
-    free(cmdBuffer);		/* @1 */
-    free(rspBuffer);		/* @2 */
-    free(ekCertificateString);	/* @3 */
-    free(attestPubString);	/* @4 */
+    free(cmdBuffer);				/* @1 */
+    free(rspBuffer);				/* @2 */
+    free(ekCertificateString);			/* @3 */
+    free(intermediateCertificateString);	/* @4*/
+    free(attestPubString);			/* @5 */
     return rc;
 }
 

@@ -5,7 +5,7 @@
 /*		       IBM Thomas J. Watson Research Center			*/
 /*            $Id: clientlocal.h 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016 - 2020.					*/
+/* (c) Copyright IBM Corporation 2016 - 2024.					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -46,12 +46,14 @@
 
 TPM_RC createEnrollmentData(char *tpmVendor,
 			    uint16_t *ekCertLength,
-			    unsigned char **ekCertificate,	
+			    unsigned char **ekCertificate,
 			    TPM2B_PRIVATE *attestPriv,
 			    TPM2B_PUBLIC *attestPub,
 			    uint16_t *attestPubLength,
-			    unsigned char **attestPubBin,	
+			    unsigned char **attestPubBin,
 			    TPMI_RH_NV_INDEX nvIndex);
+TPM_RC getIntermediateCertificate(uint16_t *intermediateCertLength,
+				  unsigned char **intermediateCert);
 TPM_RC recoverAttestationKeyCertificate(TPM2B_DIGEST 	*certInfo,
 					TPM2B_PRIVATE 	*attestPriv,
 					TPM2B_PUBLIC 	*attestPub,

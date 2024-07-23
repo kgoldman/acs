@@ -88,6 +88,7 @@ uint32_t JS_Cmd_EnrollRequest(uint32_t *length,
 			      const char *commandString,
 			      const char *tpmVendor,
 			      const char *ekCertificateString,
+			      const char *intermediateCertificateString,
 			      const char *attestPubString,
 			      const char *machineName);
 uint32_t JS_Cmd_EnrollCert(uint32_t *length,
