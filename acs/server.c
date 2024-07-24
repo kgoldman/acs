@@ -4915,51 +4915,93 @@ static uint32_t validateEkCertificate(TPMT_PUBLIC *ekPub,	/* output */
 	printf("validateEkCertificate: "
 	       "Build the EK certificate root certificate store\n");
     }
-    uint8_t *intermediateCertBin = NULL;
-    size_t intermediateCertBinLen;
-    X509 *intermediateX509Certificate;
-    unsigned int intermediateCertCount = 0;
-    if (intermediateCertString != NULL) {
-	/*
-	  convert the intermediate certificate string to an X509 structure
-	*/
+    uint8_t *intermediateCertBin = NULL;	/* binary of all the certificates*/
+    size_t intermediateCertBinLen;		/* length of all the certificates in binary */
+    /* if the caller provided intermediate CA certificates */
+    if ((rc == 0) && (intermediateCertString != NULL)) {
+	/* convert the intermediate certificate(s) string to an X509 structure */
 	if (vverbose) printf("validateEkCertificate: "
-			     "Convert intermediate certificate string to X509 structure\n");
-	/* convert intermediate certificate string to binary */
+			     "Convert intermediate certificate string to binary stream\n");
+	/* convert intermediate certificate(s) string to binary */
 	if (rc == 0) {
 	    rc = Array_Scan(&intermediateCertBin,	/* output binary, freed @5 */
 			    &intermediateCertBinLen,
 			    intermediateCertString);	/* input string */
 	}
-	/* FIXME handle chain, make array */
-	/* unmarshal the intermediate certificate DER stream to intermediate certificate X509
+	if (vverbose) printf("validateEkCertificate: "
+			     "intermediate certificate stream length %lu\n", intermediateCertBinLen);
+    }
+    /* Easier to make a fixed size array of 256 pointers than realloc. While it's possible that
+       there could be multiple certificates per index and thus overflow the array, this is unlikely
+       and not worth the additional code complexity. */
+    X509 *intermediateX509Certificate[INTERMEDIATE_CERT_INDEX_MAX];
+    for (i = 0 ; i < INTERMEDIATE_CERT_INDEX_MAX ; i++) {
+	intermediateX509Certificate[i] = NULL;    				/* for free @1 */
+    }
+    unsigned int intermediateCertCount = 0;
+    /* temp pointer because d2i will move the pointer */
+    unsigned char *tmpCert = intermediateCertBin;
+    size_t bytesLeft = intermediateCertBinLen;
+    /* parse all certificates until the entire byte stream is consumed */
+    while ((rc == 0) && (bytesLeft > 0)) {
+	/* unmarshal an intermediate certificate DER stream to intermediate certificate X509
 	   structure */
+	if (vverbose) printf("validateEkCertificate: "
+			     "Convert intermediate certificate %u to structure\n",
+			     intermediateCertCount);
 	if (rc == 0) {
-	    unsigned char *tmpCert = intermediateCertBin;  /* temp because d2i moves the pointer */
-	    intermediateX509Certificate = d2i_X509(NULL,		/* freed @6 */
-						   (const unsigned char **)&tmpCert,
-						   intermediateCertBinLen);
-	    if (intermediateX509Certificate == NULL) {
+	    intermediateX509Certificate[intermediateCertCount] =
+		d2i_X509(NULL,						/* freed @6 */
+			 (const unsigned char **)&tmpCert, bytesLeft);
+	    if (intermediateX509Certificate[intermediateCertCount] == NULL) {
 		printf("ERROR: validateEkCertificate: "
-		       "Could not parse X509 intermediate certificate\n");
+		       "Could not parse X509 intermediate certificate %u\n", intermediateCertCount);
 		rc = ACE_INVALID_CERT;
 	    }
 	}
 	if (rc == 0) {
 	    if (vverbose) {
 		int		irc;
-		irc = X509_print_fp(stdout, intermediateX509Certificate);
+		irc = X509_print_fp(stdout, intermediateX509Certificate[intermediateCertCount]);
 		if (irc != 1) {
 		    printf("ERROR: validateEkCertificate: "
-			   "Error in certificate print X509_print_fp()\n");
+			   "Error in intermediate certificate print X509_print_fp()\n");
 		    rc = ACE_INVALID_CERT;
 		}
 	    }
-	    printf("validateEkCertificate: "
-		   "Build the EK certificate root certificate store\n");
 	}
+	/* adjust the remaining length for the total bytes consumed */
 	if (rc == 0) {
-	    intermediateCertCount++;
+	    size_t totalConsumed;	/* total bytes consumed so far for all certificates */
+	    /* d2i_X509() moves the pointer forward, so the subtraction is safe. This calculates the
+	       bytes consumed so far, not just for the currect certificate */
+	    totalConsumed = tmpCert - intermediateCertBin;
+	    if (vverbose) printf("validateEkCertificate: "
+				 "Consumed %lu bytes of %lu after intermediate certificate %u\n",
+				 totalConsumed, intermediateCertBinLen, intermediateCertCount);
+	    /* the loop should terminate when bytesLeft is zero. if the client sends extra bytes,
+	       d2i_X509 will fail and terminate the loop */
+	    if (totalConsumed <= intermediateCertBinLen) {
+		bytesLeft = intermediateCertBinLen - totalConsumed;
+	    }
+	    /* this should never occur since the parsing should not consume more than bytes
+	       remaining */
+	    else {
+		printf("ERROR: validateEkCertificate: Intermediate certificates stream overflow\n");
+		rc = ACE_INVALID_CERT;
+	    }
+	}
+	/* skip to the next intermediate certificate index, to be parsed if present */
+	if (rc == 0) {
+	    /* record the parsed certificate */
+	    if (intermediateCertCount < INTERMEDIATE_CERT_INDEX_MAX) {
+		intermediateCertCount++;
+	    }
+	    /* this should never occur since the parsing loop should have terminated */
+	    else {
+		printf("ERROR: validateEkCertificate: Intermediate certificates index overrun\n");
+		rc = ACE_INVALID_CERT;
+	    }
 	}
     }
     /* get the TPM vendor root certificates */
@@ -4970,6 +5012,8 @@ static uint32_t validateEkCertificate(TPMT_PUBLIC *ekPub,	/* output */
     }
     /* get a list of TPM vendor EK root certificates */
     if (rc == 0) {
+	printf("validateEkCertificate: "
+	       "Get the EK certificate root certificate store\n");
 	rc = getRootCertificateFilenames(rootFilename,		/* freed @1 */
 					 &rootFileCount,
 					 listFilename,
@@ -4982,7 +5026,7 @@ static uint32_t validateEkCertificate(TPMT_PUBLIC *ekPub,	/* output */
     /* validate the EK certificate against the root */
     if (rc == 0) {
 	rc = verifyCertificateI(*ekX509Certificate,
-				&intermediateX509Certificate,
+				(void **)intermediateX509Certificate,	/* cast for lib independent */
 				intermediateCertCount,
 				(const char **)rootFilename,
 				rootFileCount,
@@ -5150,8 +5194,8 @@ static uint32_t validateEkCertificate(TPMT_PUBLIC *ekPub,	/* output */
     free(modulusBin);			/* @3 */
     free(ekCertBin);			/* @4 */
     free(intermediateCertBin);		/* @5 */
-    if (intermediateX509Certificate != NULL) {
-	X509_free(intermediateX509Certificate);   /* @6 */
+    for (i = 0 ; i < INTERMEDIATE_CERT_INDEX_MAX ; i++) {
+	X509_free(intermediateX509Certificate[i]);   /* @6 */
     }
     return rc;
 }
