@@ -4318,9 +4318,9 @@ static uint32_t processEnrollRequest(unsigned char **rspBuffer,
     TPMT_PUBLIC ekPub;	/* public part of client EK */
     X509 *ekX509Certificate = NULL;
     if (rc == 0) {
-	rc = validateEkCertificate(&ekPub,		/* output, TPMT_PUBLIC */
-				   &ekX509Certificate,	/* output, X509, freed @5 */
-				   ekCertString,	/* hexascii */
+	rc = validateEkCertificate(&ekPub,			/* output, TPMT_PUBLIC */
+				   &ekX509Certificate,		/* output, X509, freed @5 */
+				   ekCertString,		/* hexascii */
 				   intermediateCertString,	/* hexascii or NULL */
 				   listFilename);
     }
@@ -4871,9 +4871,9 @@ static uint32_t processEnrollCert(unsigned char **rspBuffer,
    'listFilename' is a file of file names of TPM vendor root certificates that the server trusts.
 */
 
-static uint32_t validateEkCertificate(TPMT_PUBLIC *ekPub,	/* output */
-				      X509 **ekX509Certificate,	/* output, freed by caller */
-				      const char *ekCertString,	/* hexascii */
+static uint32_t validateEkCertificate(TPMT_PUBLIC *ekPub,		/* output */
+				      X509 **ekX509Certificate,		/* output, freed by caller */
+				      const char *ekCertString,		/* hexascii */
 				      const char *intermediateCertString, /* hexascii */
 				      const char *listFilename)
 {
@@ -4912,11 +4912,9 @@ static uint32_t validateEkCertificate(TPMT_PUBLIC *ekPub,	/* output */
 		rc = ACE_INVALID_CERT;
 	    }
 	}
-	printf("validateEkCertificate: "
-	       "Build the EK certificate root certificate store\n");
     }
     uint8_t *intermediateCertBin = NULL;	/* binary of all the certificates*/
-    size_t intermediateCertBinLen;		/* length of all the certificates in binary */
+    size_t intermediateCertBinLen = 0;		/* length of all the certificates in binary */
     /* if the caller provided intermediate CA certificates */
     if ((rc == 0) && (intermediateCertString != NULL)) {
 	/* convert the intermediate certificate(s) string to an X509 structure */
@@ -4943,7 +4941,7 @@ static uint32_t validateEkCertificate(TPMT_PUBLIC *ekPub,	/* output */
     unsigned char *tmpCert = intermediateCertBin;
     size_t bytesLeft = intermediateCertBinLen;
     /* parse all certificates until the entire byte stream is consumed */
-    while ((rc == 0) && (bytesLeft > 0)) {
+    while ((rc == 0) && (intermediateCertString != NULL) && (bytesLeft > 0)) {
 	/* unmarshal an intermediate certificate DER stream to intermediate certificate X509
 	   structure */
 	if (vverbose) printf("validateEkCertificate: "
