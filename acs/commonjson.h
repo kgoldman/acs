@@ -44,6 +44,7 @@
 
 #define ACS_JSON_COMMAND_MAX 		32	/* command and response */
 #define ACS_JSON_BOOL_MAX		4
+#define ACS_JSON_ALG_MAX		4
 #define ACS_JSON_CREDENTIALBLOB_MAX	512
 #define ACS_JSON_SECRET_MAX		1024
 #define ACS_JSON_PEMCERT_MAX		4096

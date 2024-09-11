@@ -3,9 +3,8 @@
 /*		TPM 2.0 Attestation - Server JSON Handler   			*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: serverjson.h 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2015 - 2020					*/
+/* (c) Copyright IBM Corporation 2015 - 2024					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -46,6 +45,8 @@ uint32_t JS_Cmd_GetCommand(const char **commandString,
 			   uint32_t cmdLength);
 uint32_t JS_Cmd_GetLittleEndian(int *littleEndian,
 				json_object *cmdJson);
+uint32_t JS_Cmd_GetImaDigestAlgorithm(TPM_ALG_ID  *templateHashAlgId,
+				      json_object *cmdJson);
 uint32_t JS_Cmd_GetPCR(const char **pcrSha1String,
 		       const char **pcrSha256String,
 		       unsigned int pcrNum,

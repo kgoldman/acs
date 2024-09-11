@@ -3,9 +3,8 @@
 /*		TPM 2.0 Attestation - Client JSON Handler			*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: clientjson.h 1655 2021-01-15 14:44:59Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016 - 2020					*/
+/* (c) Copyright IBM Corporation 2016 - 2024					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -78,8 +77,10 @@ uint32_t JS_Cmd_AddEvent(json_object *command,
 			 unsigned int lineNum,
 			 TCG_PCR_EVENT2 *event2);
 
+uint32_t JS_Cmd_AddImaDigestAlgorithm(json_object *command,
+				      TPM_ALG_ID  templateHashAlgId);
 uint32_t JS_Cmd_AddImaEvent(json_object *command,
-			    ImaEvent 	*imaEvent,
+			    ImaEvent2 	*imaEvent,
 			    unsigned int lineNum);
 
 uint32_t JS_Cmd_EnrollRequest(uint32_t *length,

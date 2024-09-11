@@ -241,7 +241,7 @@ static uint32_t getPubKeyFingerprint(uint8_t *x509Fingerprint,
 uint32_t verifyImaTemplateData(uint32_t *badEvent,
 			       ImaTemplateData *imaTemplateData,
 			       int 	littleEndian,
-			       ImaEvent *imaEvent,
+			       ImaEvent2 *imaEvent,
 			       int eventNum);
 uint32_t verifyImaSigPresent(uint32_t *noSig,
 			     ImaTemplateData *imaTemplateData,
@@ -902,6 +902,7 @@ static uint32_t processNonce(unsigned char **rspBuffer,		/* freed by caller */
    "quoted":"hexascii",
    "signature":"hexascii",
    "event1":"000000010000000500...",
+   "templatehashalg":"000b",
    "imaevent0":"0000000aa97937766682b ...",
    }
 
@@ -2539,6 +2540,7 @@ static uint32_t processImaEntries20Pass1(unsigned int *logVerified,
 {
     uint32_t  		rc = 0;
     TPML_PCR_SELECTION	pcrSelection;
+    TPMI_ALG_HASH	templateHashAlgId = TPM_ALG_SHA1;	/* default algorithm for event log */
     unsigned int 	imaEventNum = firstImaEventNum; /* iterator, starting event */
     int			first = TRUE;			/* first time through loop */
     int 		done = FALSE;
@@ -2547,6 +2549,9 @@ static uint32_t processImaEntries20Pass1(unsigned int *logVerified,
     *logVerified = FALSE;
 
     if (vverbose) printf("processImaEntries20Pass1: First imaEventNum %u\n", firstImaEventNum);
+    if (rc == 0) {
+	rc = JS_Cmd_GetImaDigestAlgorithm(&templateHashAlgId, cmdJson);
+    }
     /* get the first IMA event number to be processed */
     if (rc == 0) {
 	/* if the client sent an incremental log, start at previous PCR */
@@ -2679,19 +2684,19 @@ static uint32_t processImaEntries20Pass1(unsigned int *logVerified,
 	    free(eventString);				/* @3 */
 	    eventString = NULL;
 	    unsigned char *eventFree = event;	/* because IMA_Event_ReadBuffer moves the buffer */
-	    ImaEvent imaEvent;
-	    IMA_Event_Init(&imaEvent);		/* so the first free works */
+	    ImaEvent2 imaEvent;
+	    IMA_Event2_Init(&imaEvent);		/* so the first free works */
 	    /* unmarshal the event */
 	    if ((rc == 0) && !done) {
 		if (vverbose) printf("processImaEntries20Pass1: unmarshaling event %u\n",
 				     imaEventNum);
 		int endOfBuffer;	/* unused */
-		rc = IMA_Event_ReadBuffer(&imaEvent,		/* freed @1 */
-					  &eventLength,
-					  &event,
-					  &endOfBuffer,
-					  FALSE,	/* client sends to server in HBO */
-					  TRUE);	/* parse template data now so errors will
+		rc = IMA_Event2_ReadBuffer(&imaEvent,		/* freed @1 */
+					   &eventLength,
+					   &event,
+					   &endOfBuffer,
+					   FALSE,	/* client sends to server in HBO */
+					   TRUE);	/* parse template data now so errors will
 							   not occur in the 2nd pass */
 		if (rc != 0) {
 		    printf("ERROR: processImaEntries20Pass1: error unmarshaling event %u\n",
@@ -2699,14 +2704,16 @@ static uint32_t processImaEntries20Pass1(unsigned int *logVerified,
 		}
 	    }
 	    if ((rc == 0) && !done) {
-		if (vverbose) IMA_Event_Trace(&imaEvent, FALSE);
+		if (vverbose) IMA_Event2_Trace(&imaEvent, FALSE);
 	    }
 	    /* extend the IMA event */
 	    TPMT_HA imapcr;
 	    if ((rc == 0) && !done) {
 		memcpy(&imapcr.digest, quotePcrsSha256Bin[TPM_IMA_PCR], TPM_SHA256_SIZE);
 
-		rc = IMA_Extend(&imapcr, &imaEvent, TPM_ALG_SHA256);
+		rc = IMA_Extend2(&imapcr, &imaEvent,
+				 TPM_ALG_SHA256,	/* PCR hash algorithm */
+				 templateHashAlgId);	/* template hash algorithm */
 		if (rc != 0) {
 		    printf("ERROR: processImaEntries20Pass1: error extending event %u\n",
 			   imaEventNum);
@@ -2719,7 +2726,7 @@ static uint32_t processImaEntries20Pass1(unsigned int *logVerified,
 					   (uint8_t *)quotePcrsSha256Bin[TPM_IMA_PCR],
 					   SHA256_DIGEST_SIZE);
 	    }
-	    IMA_Event_Free(&imaEvent);	/* @1 */
+	    IMA_Event2_Free(&imaEvent);	/* @1 */
 	    free(eventFree);		/* @2 */
 	    event = NULL;
 	}
@@ -3992,8 +3999,8 @@ static uint32_t processImaEntriesPass2(int *imasigver,
 	memset(zeroDigest, 0, TPM_SHA1_SIZE);
     }
     unsigned int eventNum;			/* the current IMA event number being processed */
-    ImaEvent imaEvent;				/* the current IMA event being processed */
-    IMA_Event_Init(&imaEvent);			/* so the first free works */
+    ImaEvent2 imaEvent;				/* the current IMA event being processed */
+    IMA_Event2_Init(&imaEvent);			/* so the first free works */
     unsigned char *eventBin = NULL;		/* so the first free works */
     unsigned char *eventFree = eventBin;	/* because IMA_Event_ReadBuffer moves the buffer */
     /* get endian'ness of client IMA event template data */
@@ -4011,7 +4018,7 @@ static uint32_t processImaEntriesPass2(int *imasigver,
 	char *eventString = NULL;
 	size_t eventBinLength;
 	/* add a free at the beginning to handle the loop 'continue' case */
-	IMA_Event_Free(&imaEvent);		/* @1 */
+	IMA_Event2_Free(&imaEvent);		/* @1 */
 	free(eventFree);			/* @2 */
 	eventFree = NULL;
 	/* get the next IMA event from the client json */
@@ -4040,7 +4047,7 @@ static uint32_t processImaEntriesPass2(int *imasigver,
 	if (rc == 0) {
 	    if (vverbose) printf("processImaEntriesPass2: unmarshaling event %u\n", eventNum);
 	    int endOfBuffer;	/* unused */
-	    IMA_Event_ReadBuffer(&imaEvent,	/* freed @1 at end of loop, and beginning for
+	    IMA_Event2_ReadBuffer(&imaEvent,	/* freed @1 at end of loop, and beginning for
 						   continue */
 				 &eventBinLength,
 				 &eventBin,
@@ -4050,13 +4057,13 @@ static uint32_t processImaEntriesPass2(int *imasigver,
 	}
 	if (rc == 0) {
 	    if (vverbose) printf("\n");		/* separate events */
-	    if (vverbose) IMA_Event_Trace(&imaEvent, TRUE);
+	    if (vverbose) IMA_Event2_Trace(&imaEvent, TRUE);
 	}
 	/* If the digest was all zero, the entry is invalid and template_data should be
 	   ignored.  This is not an error. */
 	int notAllZero;
 	if (rc == 0) {
-	    notAllZero = memcmp(imaEvent.digest, zeroDigest, TPM_SHA1_SIZE);
+	    notAllZero = memcmp(imaEvent.digest, zeroDigest, imaEvent.templateHashSize);
 	    if (!notAllZero) {
 		if (vverbose) printf("processImaEntriesPass2: skipping zero event %u\n", eventNum);
 		free(eventString);			/* @3 */
@@ -4072,7 +4079,7 @@ static uint32_t processImaEntriesPass2(int *imasigver,
 	uint32_t noKey = TRUE;
 	uint32_t badSig = TRUE;
 	if (rc == 0) {
-	    rc = IMA_VerifyImaDigest(&badEvent,
+	    rc = IMA_VerifyImaDigest2(&badEvent,
 				     &imaEvent,	/* the current IMA event being processed */
 				     eventNum);	/* the current IMA event number */
 	}
@@ -4156,7 +4163,7 @@ static uint32_t processImaEntriesPass2(int *imasigver,
 	    rc = SQ_Query(NULL, mysql, query);
 
 	}
-	IMA_Event_Free(&imaEvent);		/* @1 */
+	IMA_Event2_Free(&imaEvent);		/* @1 */
 	free(eventFree);			/* @2 */
 	free(eventString);			/* @3 */
 	free(filenameEscaped);			/* @4 */
@@ -5640,14 +5647,14 @@ static uint32_t getPubKeyFingerprint(uint8_t *x509Fingerprint,
 uint32_t verifyImaTemplateData(uint32_t *badEvent,	/* TRUE if template data parse error */
 			       ImaTemplateData *imaTemplateData, /* unmarshaled template data */
 			       int 	littleEndian,	/* boolean */
-			       ImaEvent *imaEvent,	/* the current IMA event being processed */
+			       ImaEvent2 *imaEvent,	/* the current IMA event being processed */
 			       int eventNum)	/* the current IMA event number being processed */
 {
     uint32_t 	rc = 0;
 
     /* unmarshal the template data */
     if (rc == 0) {
-	rc = IMA_TemplateData_ReadBuffer(imaTemplateData,
+	rc = IMA_TemplateData2_ReadBuffer(imaTemplateData,
 					 imaEvent,
 					 littleEndian);
     }

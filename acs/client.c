@@ -3,9 +3,8 @@
 /*		TPM 2.0 Attestation - Client    				*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: client.c 1655 2021-01-15 14:44:59Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016 - 2020.					*/
+/* (c) Copyright IBM Corporation 2016 - 2024.					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -109,6 +108,7 @@ static uint32_t createQuote(json_object **quoteResponseJson,
 			    const char *biosEntryString,
 			    const char *imaInputFilename,
 			    int 	littleEndian,
+			    TPMI_ALG_HASH  templateHashAlgId,
 			    const char *imaEntryString);
 static uint32_t addBiosEntry(json_object *command,
 			     const char *biosInputFilename,
@@ -117,6 +117,7 @@ static uint32_t addBiosEntry(json_object *command,
 static uint32_t addImaEntry(json_object *command,
 			    const char *imaInputFilename,
 			    int		littleEndian,
+			    TPMI_ALG_HASH  templateHashAlgId,
 			    const char *imaEntryString);
 #endif
 
@@ -145,6 +146,8 @@ int main(int argc, char *argv[])
 #endif
     const char *imaInputFilename = NULL;
     int 	littleEndian = TRUE;
+    int		type = 1;			/* IMA log type, default 1 */
+    TPMI_ALG_HASH templateHashAlgId = TPM_ALG_SHA1;	/* default algorithm for event log */
     const char *hostname = "localhost";		/* default server */
     const char 	*portString = NULL;		/* server port */
     short port = 2323;				/* default server */
@@ -199,6 +202,28 @@ int main(int argc, char *argv[])
 	    }
 	    else {
 		printf("-alg option needs a value\n");
+		printUsage();
+	    }
+	}
+	else if (strcmp(argv[i],"-ty") == 0) {
+	    i++;
+	    if (i < argc) {
+		sscanf(argv[i],"%u", &type);
+		switch (type) {
+		  case 1:				/* original sha1 event log */
+		  case 2:				/* sha1 zero extended event log */
+		    templateHashAlgId = TPM_ALG_SHA1;
+		    break;
+		  case 3:
+		    templateHashAlgId = TPM_ALG_SHA256;
+		    break;				/* sha256 event log */
+		  default:
+		    printf("Bad parameter %s for -ty\n", argv[i]);
+		    printUsage();
+		}
+	    }
+	    else {
+		printf("-ty option needs a value\n");
 		printUsage();
 	    }
 	}
@@ -487,7 +512,7 @@ int main(int argc, char *argv[])
 			     machineName,
 			     nonceString, &pcrSelection,
 			     biosInputFilename, biosEntryString,
-			     imaInputFilename, littleEndian, imaEntryString);
+			     imaInputFilename, littleEndian, templateHashAlgId, imaEntryString);
 	}
 	quoteEnd = time(NULL);
 
@@ -723,6 +748,7 @@ static uint32_t createQuote(json_object **quoteResponseJson,	/* freed by caller 
 			    const char *biosEntryString,
 			    const char *imaInputFilename,
 			    int 	littleEndian,
+			    TPMI_ALG_HASH  templateHashAlgId,
 			    const char *imaEntryString)
 {
     uint32_t 	rc = 0;
@@ -804,7 +830,7 @@ static uint32_t createQuote(json_object **quoteResponseJson,	/* freed by caller 
 #ifndef TPM_ACS_NOIMA
     /* adds the IMA events from the event log file 'imaInputFilename' */
     if (rc == 0) {
-	rc = addImaEntry(command, imaInputFilename, littleEndian, imaEntryString);
+	rc = addImaEntry(command, imaInputFilename, littleEndian, templateHashAlgId, imaEntryString);
     }
 #endif
     uint32_t cmdLength;
@@ -954,12 +980,18 @@ static uint32_t addBiosEntry(json_object *command,
 static uint32_t addImaEntry(json_object *command,
 			    const char *imaInputFilename,
 			    int		littleEndian,
+			    TPMI_ALG_HASH templateHashAlgId,
 			    const char *imaEntryString)	/* FIXME */
 {
     uint32_t 	rc = 0;
 
     if (vverbose) printf("addImaEntry: Entry\n");
     int imaEntry;	/* response as an integer */
+
+    if (rc == 0) {
+	rc = JS_Cmd_AddImaDigestAlgorithm(command,
+					  templateHashAlgId);
+    }
     if (rc == 0) {
 	sscanf(imaEntryString, "%u", &imaEntry);
     }
@@ -987,18 +1019,19 @@ static uint32_t addImaEntry(json_object *command,
 		rc = ACE_FILE_OPEN;
 	    }
 	}
-	ImaEvent 		imaEvent;
+	ImaEvent2 		imaEvent;
 	int 			event;
 	int 			endOfFile = FALSE;
 	if (vverbose) printf("addImaEntry: skipping to event %u\n", imaEntry);
 	for (event = 0 ; (rc == 0) && (event < imaEntry) && !endOfFile ; event++) {
 	    if (rc == 0) {
-		IMA_Event_Init(&imaEvent);
-		rc = IMA_Event_ReadFile(&imaEvent,	/* freed by caller */
-					&endOfFile,
-					inFile,
-					littleEndian);		/* little endian */
-		IMA_Event_Free(&imaEvent);
+		IMA_Event2_Init(&imaEvent);
+		rc = IMA_Event2_ReadFile(&imaEvent,	/* freed by caller */
+					 &endOfFile,
+					 inFile,
+					 littleEndian,		/* little endian */
+					 templateHashAlgId);
+		IMA_Event2_Free(&imaEvent);
 	    }
 	    /* the measurements to be skipped had better still be there */
 	    if (rc == 0) {
@@ -1021,14 +1054,16 @@ static uint32_t addImaEntry(json_object *command,
 	for ( ; (rc == 0) && !endOfFile; event++) {
 	    if (rc == 0) {
 		if (vverbose) printf("addImaEntry: reading event %u\n", event);
-		IMA_Event_Init(&imaEvent);
-		rc = IMA_Event_ReadFile(&imaEvent,	/* freed by caller */
-					&endOfFile,
-					inFile,
-					littleEndian);		/* little endian */
+		IMA_Event2_Init(&imaEvent);
+		rc = IMA_Event2_ReadFile(&imaEvent,	/* freed by caller */
+					 &endOfFile,
+					 inFile,
+					 littleEndian,		/* little endian */
+					 templateHashAlgId);
+
 	    }
 	    if ((rc == 0) && !endOfFile) {
-		if (vverbose) IMA_Event_Trace(&imaEvent, TRUE);
+		if (vverbose) IMA_Event2_Trace(&imaEvent, TRUE);
 	    }
 	    if ((rc == 0) && !endOfFile) {
 		/* serialize and add this IMA event to the json command */
@@ -1037,7 +1072,7 @@ static uint32_t addImaEntry(json_object *command,
 					&imaEvent,
 					event);
 	    }
-	    IMA_Event_Free(&imaEvent);
+	    IMA_Event2_Free(&imaEvent);
 	}
 	if (inFile != NULL) {
 	    fclose(inFile);		/* @2 */

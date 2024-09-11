@@ -3,9 +3,8 @@
 /*		TPM 2.0 Attestation - Server JSON Handler   			*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: serverjson.c 1607 2020-04-28 21:35:05Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016 - 2020.					*/
+/* (c) Copyright IBM Corporation 2016 - 2024.					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -65,7 +64,7 @@ uint32_t JS_Cmd_GetCommand(const char **commandString,
 			   uint32_t cmdLength)
 {
     uint32_t  rc = 0;
-    
+
     cmdLength = cmdLength;
 
     /* parse json stream to object */
@@ -92,7 +91,7 @@ uint32_t JS_Cmd_GetLittleEndian(int *littleEndian,
 {
     uint32_t  rc = 0;
     const char *littleEndianString;
-    
+
     if (rc == 0) {
 	rc = JS_ObjectGetString(&littleEndianString, "littleendian", ACS_JSON_BOOL_MAX, cmdJson);
     }
@@ -104,6 +103,37 @@ uint32_t JS_Cmd_GetLittleEndian(int *littleEndian,
 	    *littleEndian = FALSE;
 	}
 	else {
+	    rc = ACE_HEXASCII;
+	}
+    }
+    return rc;
+}
+
+/* JS_Cmd_GetImaDigestAlgorithm() gets the TPM_ALG_ID template hash algorithm json templatehashalg
+   key */
+
+uint32_t JS_Cmd_GetImaDigestAlgorithm(TPMI_ALG_HASH *templateHashAlgId,
+				      json_object *cmdJson)
+{
+    uint32_t  rc = 0;
+    const char *templateHashAlgIdString;
+
+    if (rc == 0) {
+	rc = JS_ObjectGetStringNull(&templateHashAlgIdString,
+				    "templatehashalg", ACS_JSON_ALG_MAX, cmdJson);
+    }
+    if (rc == 0) {
+	if (templateHashAlgIdString == NULL) {
+	    *templateHashAlgId = TPM_ALG_SHA1;	/* legacy default */
+	}
+	else if (strcmp(templateHashAlgIdString, "0004") == 0) {
+	    *templateHashAlgId = TPM_ALG_SHA1;
+	}
+	else if (strcmp(templateHashAlgIdString, "000b") == 0) {
+	    *templateHashAlgId = TPM_ALG_SHA256;
+	}
+	else {
+	    printf("ERROR: JS_Cmd_GetImaDigestAlgorithm: Unsupported algorithm\n");
 	    rc = ACE_HEXASCII;
 	}
     }
@@ -175,7 +205,7 @@ uint32_t JS_Cmd_GetImaEntry(unsigned int *imaEntry,
 {
     uint32_t  rc = 0;
     const char *imaEntryString = NULL;
-    
+
     if (rc == 0) {
 	rc = JS_ObjectGetString(&imaEntryString, "imaentry", ACS_JSON_EVENTNUM_MAX, cmdJson);
     }
@@ -248,6 +278,5 @@ uint32_t JS_Rsp_AddError(json_object *responseJson,
     }
     free(errorCodeString);
     return rc;
-   
-}
 
+}

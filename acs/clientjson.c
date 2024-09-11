@@ -3,9 +3,8 @@
 /*		TPM 2.0 Attestation - Client JSON Handler			*/
 /*			     Written by Ken Goldman				*/
 /*		       IBM Thomas J. Watson Research Center			*/
-/*            $Id: clientjson.c 1655 2021-01-15 14:44:59Z kgoldman $		*/
 /*										*/
-/* (c) Copyright IBM Corporation 2016 - 2020					*/
+/* (c) Copyright IBM Corporation 2016 - 2024					*/
 /*										*/
 /* All rights reserved.								*/
 /* 										*/
@@ -251,6 +250,23 @@ uint32_t JS_Cmd_AddEvent(json_object *command,
 
 #endif
 
+#ifndef TPM_ACS_NOIMA
+
+/* JS_Cmd_AddImaDigestAlgorithm() add the IMA template hash algorithm
+   to the client quote.
+*/
+
+uint32_t JS_Cmd_AddImaDigestAlgorithm(json_object *command,
+				      TPMI_ALG_HASH templateHashAlgId)
+{
+    uint32_t rc = 0;
+    char valueString[5];
+
+    sprintf(valueString, "%04x", templateHashAlgId);
+    json_object_object_add(command, "templatehashalg", json_object_new_string(valueString));
+    return rc;
+}
+
 /* JS_Cmd_AddImaEvent() adds an IMA event to the command json.
 
    The event is an ImaEvent structure.
@@ -260,10 +276,8 @@ uint32_t JS_Cmd_AddEvent(json_object *command,
 
 */
 
-#ifndef TPM_ACS_NOIMA
-
 uint32_t JS_Cmd_AddImaEvent(json_object *command,
-			    ImaEvent 	*imaEvent,
+			    ImaEvent2 	*imaEvent,
 			    unsigned int lineNum)
 {
     uint32_t rc = 0;
@@ -277,7 +291,7 @@ uint32_t JS_Cmd_AddImaEvent(json_object *command,
 	rc = TSS_Structure_Marshal(&eventBin,		/* freed @1 */
 				   &written,
 				   imaEvent,
-				   (MarshalFunction_t)IMA_Event_Marshal);
+				   (MarshalFunction_t)IMA_Event2_Marshal);
     }
     /* allocate for the ImaEvent string */ 
     if (rc == 0) {
