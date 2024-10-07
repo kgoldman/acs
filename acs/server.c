@@ -401,6 +401,19 @@ int main(int argc, char *argv[])
 					   &imaX509,			/* freed @2 */
 					   imaCertFilename[imaKeyNumber]);
 	}
+	if (verbose && (rc == 0)) {
+	    int nid = EVP_PKEY_get_id(imaRsaPkey[imaKeyNumber]);
+	    switch (nid) {
+	      case EVP_PKEY_RSA:
+		printf("INFO: main: IMA certificate %u nid %d RSA\n", imaKeyNumber, nid);
+		break;
+	      case EVP_PKEY_EC:
+		printf("INFO: main: IMA certificate %u nid %d ECC\n", imaKeyNumber, nid);
+		break;
+	      default:
+		printf("INFO: main: IMA certificate %u nid %d\n", imaKeyNumber, nid);
+	    }
+	}
 	/* get the fingerprint, the X509 certificate Subject Key Identifier last 4 bytes  for IMA */
 	if (rc == 0) {
 	    rc = getPubKeyFingerprint(imaFingerprint[imaKeyNumber],
@@ -2540,7 +2553,7 @@ static uint32_t processImaEntries20Pass1(unsigned int *logVerified,
 {
     uint32_t  		rc = 0;
     TPML_PCR_SELECTION	pcrSelection;
-    TPMI_ALG_HASH	templateHashAlgId = TPM_ALG_SHA1;	/* default algorithm for event log */
+    TPMI_ALG_HASH	templateHashAlg = TPM_ALG_SHA1;	/* default algorithm for event log */
     unsigned int 	imaEventNum = firstImaEventNum; /* iterator, starting event */
     int			first = TRUE;			/* first time through loop */
     int 		done = FALSE;
@@ -2550,7 +2563,7 @@ static uint32_t processImaEntries20Pass1(unsigned int *logVerified,
 
     if (vverbose) printf("processImaEntries20Pass1: First imaEventNum %u\n", firstImaEventNum);
     if (rc == 0) {
-	rc = JS_Cmd_GetImaDigestAlgorithm(&templateHashAlgId, cmdJson);
+	rc = JS_Cmd_GetImaDigestAlgorithm(&templateHashAlg, cmdJson);
     }
     /* get the first IMA event number to be processed */
     if (rc == 0) {
@@ -2713,7 +2726,7 @@ static uint32_t processImaEntries20Pass1(unsigned int *logVerified,
 
 		rc = IMA_Extend2(&imapcr, &imaEvent,
 				 TPM_ALG_SHA256,	/* PCR hash algorithm */
-				 templateHashAlgId);	/* template hash algorithm */
+				 templateHashAlg);	/* template hash algorithm */
 		if (rc != 0) {
 		    printf("ERROR: processImaEntries20Pass1: error extending event %u\n",
 			   imaEventNum);

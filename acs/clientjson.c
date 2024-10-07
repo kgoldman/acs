@@ -257,12 +257,12 @@ uint32_t JS_Cmd_AddEvent(json_object *command,
 */
 
 uint32_t JS_Cmd_AddImaDigestAlgorithm(json_object *command,
-				      TPMI_ALG_HASH templateHashAlgId)
+				      TPMI_ALG_HASH templateHashAlg)
 {
     uint32_t rc = 0;
     char valueString[5];
 
-    sprintf(valueString, "%04x", templateHashAlgId);
+    sprintf(valueString, "%04x", templateHashAlg);
     json_object_object_add(command, "templatehashalg", json_object_new_string(valueString));
     return rc;
 }

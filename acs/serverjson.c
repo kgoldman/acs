@@ -112,25 +112,31 @@ uint32_t JS_Cmd_GetLittleEndian(int *littleEndian,
 /* JS_Cmd_GetImaDigestAlgorithm() gets the TPM_ALG_ID template hash algorithm json templatehashalg
    key */
 
-uint32_t JS_Cmd_GetImaDigestAlgorithm(TPMI_ALG_HASH *templateHashAlgId,
+uint32_t JS_Cmd_GetImaDigestAlgorithm(TPMI_ALG_HASH *templateHashAlg,
 				      json_object *cmdJson)
 {
     uint32_t  rc = 0;
-    const char *templateHashAlgIdString;
+    const char *templateHashAlgString;
 
     if (rc == 0) {
-	rc = JS_ObjectGetStringNull(&templateHashAlgIdString,
+	rc = JS_ObjectGetStringNull(&templateHashAlgString,
 				    "templatehashalg", ACS_JSON_ALG_MAX, cmdJson);
     }
     if (rc == 0) {
-	if (templateHashAlgIdString == NULL) {
-	    *templateHashAlgId = TPM_ALG_SHA1;	/* legacy default */
+	if (templateHashAlgString == NULL) {
+	    *templateHashAlg = TPM_ALG_SHA1;	/* legacy default */
 	}
-	else if (strcmp(templateHashAlgIdString, "0004") == 0) {
-	    *templateHashAlgId = TPM_ALG_SHA1;
+	else if (strcmp(templateHashAlgString, "0004") == 0) {
+	    *templateHashAlg = TPM_ALG_SHA1;
 	}
-	else if (strcmp(templateHashAlgIdString, "000b") == 0) {
-	    *templateHashAlgId = TPM_ALG_SHA256;
+	else if (strcmp(templateHashAlgString, "000b") == 0) {
+	    *templateHashAlg = TPM_ALG_SHA256;
+	}
+	else if (strcmp(templateHashAlgString, "000c") == 0) {
+	    *templateHashAlg = TPM_ALG_SHA384;
+	}
+	else if (strcmp(templateHashAlgString, "000d") == 0) {
+	    *templateHashAlg = TPM_ALG_SHA512;
 	}
 	else {
 	    printf("ERROR: JS_Cmd_GetImaDigestAlgorithm: Unsupported algorithm\n");

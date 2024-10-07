@@ -108,7 +108,7 @@ static uint32_t createQuote(json_object **quoteResponseJson,
 			    const char *biosEntryString,
 			    const char *imaInputFilename,
 			    int 	littleEndian,
-			    TPMI_ALG_HASH  templateHashAlgId,
+			    TPMI_ALG_HASH  templateHashAlg,
 			    const char *imaEntryString);
 static uint32_t addBiosEntry(json_object *command,
 			     const char *biosInputFilename,
@@ -117,7 +117,7 @@ static uint32_t addBiosEntry(json_object *command,
 static uint32_t addImaEntry(json_object *command,
 			    const char *imaInputFilename,
 			    int		littleEndian,
-			    TPMI_ALG_HASH  templateHashAlgId,
+			    TPMI_ALG_HASH  templateHashAlg,
 			    const char *imaEntryString);
 #endif
 
@@ -146,8 +146,7 @@ int main(int argc, char *argv[])
 #endif
     const char *imaInputFilename = NULL;
     int 	littleEndian = TRUE;
-    int		type = 1;			/* IMA log type, default 1 */
-    TPMI_ALG_HASH templateHashAlgId = TPM_ALG_SHA1;	/* default algorithm for event log */
+    TPMI_ALG_HASH templateHashAlg = TPM_ALG_SHA1;	/* default algorithm for event log */
     const char *hostname = "localhost";		/* default server */
     const char 	*portString = NULL;		/* server port */
     short port = 2323;				/* default server */
@@ -205,26 +204,25 @@ int main(int argc, char *argv[])
 		printUsage();
 	    }
 	}
-	else if (strcmp(argv[i],"-ty") == 0) {
+	else if (strcmp(argv[i],"-ealg") == 0) {
 	    i++;
 	    if (i < argc) {
-		sscanf(argv[i],"%u", &type);
-		switch (type) {
-		  case 1:				/* original sha1 event log */
-		  case 2:				/* sha1 zero extended event log */
-		    templateHashAlgId = TPM_ALG_SHA1;
-		    break;
-		  case 3:
-		    templateHashAlgId = TPM_ALG_SHA256;
-		    break;				/* sha256 event log */
-		  default:
-		    printf("Bad parameter %s for -ty\n", argv[i]);
+		if (strcmp(argv[i],"sha1") == 0) {
+		    templateHashAlg = TPM_ALG_SHA1;
+		}
+		else if (strcmp(argv[i],"sha256") == 0) {
+		    templateHashAlg = TPM_ALG_SHA256;
+		}
+		else if (strcmp(argv[i],"sha384") == 0) {
+		    templateHashAlg = TPM_ALG_SHA384;
+		}
+		else if (strcmp(argv[i],"sha512") == 0) {
+		    templateHashAlg = TPM_ALG_SHA512;
+		}
+		else {
+		    printf("Bad parameter %s for -ealg\n", argv[i]);
 		    printUsage();
 		}
-	    }
-	    else {
-		printf("-ty option needs a value\n");
-		printUsage();
 	    }
 	}
 	else if (strcmp(argv[i],"-ho") == 0) {
@@ -512,7 +510,7 @@ int main(int argc, char *argv[])
 			     machineName,
 			     nonceString, &pcrSelection,
 			     biosInputFilename, biosEntryString,
-			     imaInputFilename, littleEndian, templateHashAlgId, imaEntryString);
+			     imaInputFilename, littleEndian, templateHashAlg, imaEntryString);
 	}
 	quoteEnd = time(NULL);
 
@@ -748,7 +746,7 @@ static uint32_t createQuote(json_object **quoteResponseJson,	/* freed by caller 
 			    const char *biosEntryString,
 			    const char *imaInputFilename,
 			    int 	littleEndian,
-			    TPMI_ALG_HASH  templateHashAlgId,
+			    TPMI_ALG_HASH  templateHashAlg,
 			    const char *imaEntryString)
 {
     uint32_t 	rc = 0;
@@ -830,7 +828,7 @@ static uint32_t createQuote(json_object **quoteResponseJson,	/* freed by caller 
 #ifndef TPM_ACS_NOIMA
     /* adds the IMA events from the event log file 'imaInputFilename' */
     if (rc == 0) {
-	rc = addImaEntry(command, imaInputFilename, littleEndian, templateHashAlgId, imaEntryString);
+	rc = addImaEntry(command, imaInputFilename, littleEndian, templateHashAlg, imaEntryString);
     }
 #endif
     uint32_t cmdLength;
@@ -980,7 +978,7 @@ static uint32_t addBiosEntry(json_object *command,
 static uint32_t addImaEntry(json_object *command,
 			    const char *imaInputFilename,
 			    int		littleEndian,
-			    TPMI_ALG_HASH templateHashAlgId,
+			    TPMI_ALG_HASH templateHashAlg,
 			    const char *imaEntryString)	/* FIXME */
 {
     uint32_t 	rc = 0;
@@ -990,7 +988,7 @@ static uint32_t addImaEntry(json_object *command,
 
     if (rc == 0) {
 	rc = JS_Cmd_AddImaDigestAlgorithm(command,
-					  templateHashAlgId);
+					  templateHashAlg);
     }
     if (rc == 0) {
 	sscanf(imaEntryString, "%u", &imaEntry);
@@ -1030,7 +1028,7 @@ static uint32_t addImaEntry(json_object *command,
 					 &endOfFile,
 					 inFile,
 					 littleEndian,		/* little endian */
-					 templateHashAlgId);
+					 templateHashAlg);
 		IMA_Event2_Free(&imaEvent);
 	    }
 	    /* the measurements to be skipped had better still be there */
@@ -1059,7 +1057,7 @@ static uint32_t addImaEntry(json_object *command,
 					 &endOfFile,
 					 inFile,
 					 littleEndian,		/* little endian */
-					 templateHashAlgId);
+					 templateHashAlg);
 
 	    }
 	    if ((rc == 0) && !endOfFile) {
