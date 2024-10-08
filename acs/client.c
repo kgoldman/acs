@@ -1098,7 +1098,7 @@ static void printUsage(void)
     printf("\tsend BIOS measurement list\n");
     printf("\tsend IMA measurement list\n");
     printf("\n");
-    printf("[-alg (rsa or ec) (default rsa)]\n");
+    printf("[-alg AK quote algorithm (rsa or ec) (default rsa)]\n");
 #if !defined(TPM_ACS_PVM_REMOTE) && !defined(TPM_ACS_PVM_INBAND)
     printf("[-ifb BIOS filename (binary measurement log)]\n");
     printf("\tdefault sends empty log\n");

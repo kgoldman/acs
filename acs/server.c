@@ -324,7 +324,7 @@ int verbose = 0;
 unsigned int 	imaKeyCount = 0;
 const char 	*imaCertFilename[IMA_KEYS_MAX];
 uint8_t 	imaFingerprint[IMA_KEYS_MAX][4];
-EVP_PKEY	*imaRsaPkey[IMA_KEYS_MAX];
+EVP_PKEY	*imaPkey[IMA_KEYS_MAX];
 
 int main(int argc, char *argv[])
 {
@@ -397,12 +397,12 @@ int main(int argc, char *argv[])
 			    imaKeyNumber, imaCertFilename[imaKeyNumber]);
 	/* extract openssl format IMA public key from the IMA certificate */
 	if (rc == 0) {
-	    rc = getPubkeyFromDerCertFile3(&imaRsaPkey[imaKeyNumber],	/* freed FIXME */
+	    rc = getPubkeyFromDerCertFile3(&imaPkey[imaKeyNumber],	/* freed FIXME */
 					   &imaX509,			/* freed @2 */
 					   imaCertFilename[imaKeyNumber]);
 	}
 	if (verbose && (rc == 0)) {
-	    int nid = EVP_PKEY_get_id(imaRsaPkey[imaKeyNumber]);
+	    int nid = EVP_PKEY_get_id(imaPkey[imaKeyNumber]);
 	    switch (nid) {
 	      case EVP_PKEY_RSA:
 		printf("INFO: main: IMA certificate %u nid %d RSA\n", imaKeyNumber, nid);
@@ -4128,7 +4128,7 @@ static uint32_t processImaEntriesPass2(int *imasigver,
 	if ((rc == 0) && !badEvent && !noSig && !noKey) {
 	    rc = verifyImaSignature(&badSig,		/* verification return code */
 				    &imaTemplateData,	/* unmarshaled template data */
-				    imaRsaPkey[imaKeyNumber],	/* EVP_PKEY public key token */
+				    imaPkey[imaKeyNumber],	/* EVP_PKEY public key token */
 				    eventNum);	/* the current IMA event number */
 	}
 	if (badEvent || noSig || noKey || badSig) {
@@ -5743,8 +5743,10 @@ uint32_t getImaPublicKeyIndex(uint32_t *noKey,
     return rc;
 }
 
-/* verifyImaSignature() verifies the template data signature.
+/* verifyImaSignature() verifies the template data signature against the public key from the server
+   key store.
 
+   Supports RSA and ECC IMA file signatures.
 */
 
 uint32_t verifyImaSignature(uint32_t *badSig,
@@ -5754,10 +5756,13 @@ uint32_t verifyImaSignature(uint32_t *badSig,
 			    int eventNum)	/* the current IMA event number being processed */
 {
     uint32_t 		rc = 0;
+    int 		pkeyType;	/* EVP_PKEY_RSA or EVP_PKEY_EC */
     TPMI_ALG_HASH 	halg;
     TPMT_SIGNATURE 	tSignature;
 
-    if (rc == 0) {
+    *badSig = FALSE;
+    /* required only for RSA */
+    if ((rc == 0) & !(*badSig)) {
 	switch (imaTemplateData->imaTemplateDNG.hashAlgId) {
 	  case TPM_ALG_SHA1:
 	    halg = TPM_ALG_SHA1;
@@ -5771,28 +5776,57 @@ uint32_t verifyImaSignature(uint32_t *badSig,
 	    *badSig = TRUE;
 	}
     }
-    if (rc == 0) {
-	rc = convertRsaBinToTSignature(&tSignature,
-				       halg,
-				       imaTemplateData->imaTemplateSIG.signature,
-				       imaTemplateData->imaTemplateSIG.signatureSize);
+    if ((rc == 0) & !(*badSig)) {
+	pkeyType = EVP_PKEY_base_id(evpPkey);
+	switch (pkeyType) {
+	  case EVP_PKEY_RSA:
+	    if (rc == 0) {
+		rc = convertRsaBinToTSignature(&tSignature,
+					       halg,
+					       imaTemplateData->imaTemplateSIG.signature,
+					       imaTemplateData->imaTemplateSIG.signatureSize);
+	    }
+	    if (rc == 0) {
+		rc = verifyRSASignatureFromRSA3(imaTemplateData->imaTemplateDNG.fileDataHash,
+						imaTemplateData->imaTemplateDNG.fileDataHashLength,
+						&tSignature,
+						halg,
+						evpPkey);
+	    }
+	    if (rc == 0) {
+		if (verbose) printf("INFO: verifyImaSignature: "
+				    "RSA file signature verified, event %u\n", eventNum);
+	    }
+	    break;
+	  case EVP_PKEY_EC:
+	    if (rc == 0) {
+		rc = convertEcBinToTSignature(&tSignature,
+					      halg,
+					      imaTemplateData->imaTemplateSIG.signature,
+					      imaTemplateData->imaTemplateSIG.signatureSize);
+	    }
+	    if (rc == 0) {
+		rc = verifyEcSignatureFromEvpPubKey
+		     (imaTemplateData->imaTemplateDNG.fileDataHash,
+		      imaTemplateData->imaTemplateDNG.fileDataHashLength,
+		      &tSignature,
+		      evpPkey);
+	    }
+	    if (rc == 0) {
+		if (verbose) printf("INFO: verifyImaSignature: "
+				    "ECC file signature verified, event %u\n", eventNum);
+	    }
+	    break;
+	  default:
+	    printf("ERROR: verifyImaSignature: Error, bad public key type, event %u\n", eventNum);
+	    *badSig = TRUE;
+	}
     }
-    if (rc == 0) {
-	rc = verifyRSASignatureFromRSA3(imaTemplateData->imaTemplateDNG.fileDataHash,
-					imaTemplateData->imaTemplateDNG.fileDataHashLength,
-					&tSignature,
-					halg,
-					evpPkey);
-    }
-    if (rc == 0) {
-	if (verbose) printf("INFO: verifyImaSignature: signature verified, event %u\n",
-				eventNum);
-	*badSig = FALSE;
+    if ((rc == 0) & !(*badSig)) {
 
     }
     else {
-	printf("ERROR: verifyImaSignature: Error, signature did not verify, event %u\n",
-	       eventNum);
+	printf("ERROR: verifyImaSignature: Error, signature did not verify, event %u\n", eventNum);
 	*badSig = TRUE;
     }
     return 0;		/* always returns success, but sets badSig on failure */

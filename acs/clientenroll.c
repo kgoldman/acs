@@ -698,9 +698,11 @@ static void printUsage(void)
 #endif
     printf("\n");
     printf("Provisions an attestation client with an attestation key.\n"
+	   "Obtains a certificate from the attestation server.\n"
+	   "Uses the EK certificate algorithm matching the AK algorithm\n"
 	   "Obtains a certificate from the attestation server.\n");
     printf("\n");
-    printf("[-alg (rsa or ec) (default rsa)]\n");
+    printf("[-alg for EK input and AK output (rsa or ec) (default rsa)]\n");
     printf("\t[2048 3072) (default 2048)]\n");
     printf("\t[nistp256 nistp384) (default nistp384)]\n");
     printf("[-ho ACS server host name (default localhost)]\n");
