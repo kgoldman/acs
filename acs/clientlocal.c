@@ -184,7 +184,8 @@ TPM_RC getIntermediateCertificate(uint16_t *intermediateCertLength,
     if (rc == 0) {
 	rc = TSS_Create(&tssContext);
     }
-    for (nvIndex = INTERMEDIATE_CERT_INDEX ; (rc == 0) && !done ; nvIndex++) {
+    for (nvIndex = INTERMEDIATE_CERT_INDEX_FIRST ;
+	 (rc == 0) && (nvIndex < INTERMEDIATE_CERT_INDEX_LAST) && !done ; nvIndex++) {
 
 	if (vverbose) printf("getIntermediateCertificate: reading %08x\n", nvIndex);
 	rc = getIndexContents(tssContext,
