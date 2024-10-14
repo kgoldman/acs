@@ -874,6 +874,7 @@ Messages are a push (client to server) rather than a pull (server to client) for
   "command":"enrollrequest",
   "hostname":"cainl.watson.ibm.com",
   "tpmvendor":"IBM ",
+  "intermediatecert":"3082021b308201c1a003..."
   "ekcert":"3082033e30820224a0...",
   "akpub":"0001000b00050472000..."
 }
