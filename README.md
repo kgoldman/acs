@@ -1,6 +1,11 @@
 # IBM Attestation Client Server
 
-This includes installation, running, and design documentation for the IBM Attestation Client Server.
+This includes installation, running, and design documentation for the
+IBM Attestation Client Server.
+
+The IMA event log format is documented at
+https://ima-doc.readthedocs.io/en/latest/event-log-format.html# with
+the document source at https://github.com/linux-integrity/ima-doc.
 
 **Table of Contents**
 
