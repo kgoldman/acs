@@ -155,7 +155,7 @@ The makefiles and these instructions assume that the TSS is built in
 
 #### SW TPM
 
-If using a SW TPM, The SW TPM is [here] (https://sourceforge.net/projects/ibmswtpm2/)
+If using a SW TPM, The SW TPM is [here] (https://github.com/kgoldman/ibmswtpm2)
 
 ```
 > cd .../tpm2/src
@@ -166,7 +166,7 @@ If using a SW TPM, The SW TPM is [here] (https://sourceforge.net/projects/ibmswt
 
 Create the TSS and utilities.  create libtss.so
 
-The TSS is [here] (https://sourceforge.net/projects/ibmtpm20tss/)
+The TSS is [here] (https://github.com/kgoldman/ibmtss)
 
 1. For a TPM 2.0 TSS
 

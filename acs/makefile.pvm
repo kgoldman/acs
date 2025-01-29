@@ -1,0 +1,92 @@
+#										#
+#		TPM 2.0 Attestation - POWER client and server makefile		#
+#			     Written by Chris Engel				#
+#		       IBM Thomas J. Watson Research Center			#
+#	      $Id: makefile.pvm 1345 2018-10-03 18:27:50Z kgoldman $		#
+#										#
+# (c) Copyright IBM Corporation 2017, 2018					#
+# 										#
+# All rights reserved.								#
+# 										#
+# Redistribution and use in source and binary forms, with or without		#
+# modification, are permitted provided that the following conditions are	#
+# met:										#
+# 										#
+# Redistributions of source code must retain the above copyright notice,	#
+# this list of conditions and the following disclaimer.				#
+# 										#
+# Redistributions in binary form must reproduce the above copyright		#
+# notice, this list of conditions and the following disclaimer in the		#
+# documentation and/or other materials provided with the distribution.		#
+# 										#
+# Neither the names of the IBM Corporation nor the names of its			#
+# contributors may be used to endorse or promote products derived from		#
+# this software without specific prior written permission.			#
+# 										#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS		#
+# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT		#
+# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR		#
+# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT		#
+# HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,	#
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT		#
+# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,		#
+# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY		#
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT		#
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE		#
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.		#
+#										#
+
+# build targets
+
+ALLPVM = acsPvmRemoteClient acsPvmRemoteClientEnroll
+
+include makefile-targets
+
+ALL = 
+ALL += $(ALLCLIENT)	
+ALL += $(ALLSERVER)
+ALL += $(ALLPVM)	
+#ALL += $(ALLPHP)	
+
+all:	$(ALL) 
+
+# shared library
+
+LIBTSS = ibmtss
+LIBTSSUTILS = ibmtssutils
+
+CCFLAGS =
+
+# client and server additional libraries
+
+#LNLIBS =	-lcurl
+
+include makefile-common20
+
+REMOTE_CLIENT_OBJS := client_ob.o clientPvmLocal_ob.o clientjson_ob.o
+acsPvmRemoteClient: $(REMOTE_CLIENT_OBJS) \
+			commonjson.o clientsocket.o commonutils.o \
+			commontss.o
+
+		/usr/bin/gcc $(LNFLAGS) $(REMOTE_CLIENT_OBJS) \
+		commonjson.o clientsocket.o commonutils.o \
+		commontss.o \
+		 $(LNLIBS) \
+		-o acsPvmRemoteClient
+
+REMOTE_ENROLL_OBJS := clientenroll_ob.o clientPvmLocal_ob.o clientjson_ob.o
+acsPvmRemoteClientEnroll:	$(REMOTE_ENROLL_OBJS) \
+			commonjson.o clientsocket.o commonutils.o \
+			commoncrypto.o commontss.o
+
+		/usr/bin/gcc $(LNFLAGS) \
+		$(REMOTE_ENROLL_OBJS) \
+		commonjson.o clientsocket.o commonutils.o \
+		commoncrypto.o commontss.o \
+		$(LNLIBS) \
+		-o acsPvmRemoteClientEnroll
+
+$(sort $(REMOTE_CLIENT_OBJS) $(REMOTE_ENROLL_OBJS)): %_ob.o: %.c
+		$(CC) $(CCFLAGS) -DTPM_ACS_PVM_REMOTE -DTPM_ACS_NOIMA -o $@ $<
+
+

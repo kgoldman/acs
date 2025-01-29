@@ -16,11 +16,6 @@ acs/clientenroll12
 acs/*.o
 acs/*.log4j
 acs/*.log
-README.PVM.txt
-acsPvmTypes.h
-clientPvmLocal.c
-makefile.pvm
-makefile.pvminband
 acstarballs
 iotdemo
 iotsigner
