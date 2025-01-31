@@ -13,6 +13,8 @@ acs/server
 acs/serverbc.*
 acs/clientenroll
 acs/clientenroll12
+acs/acsPvmRemoteClient
+acs/acsPvmRemoteClientEnroll
 acs/*.o
 acs/*.log4j
 acs/*.log

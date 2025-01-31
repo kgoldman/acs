@@ -55,7 +55,7 @@ LNFLAGS = 	-ggdb -pg	\
 # setenv LIBRARY_PATH [path to]/tpm2/utils
 # setenv LD_LIBRARY_PATH [path to]/tpm2/utils
 
-LNLIBS += 	-L. -L../utils -l$(LIBTSS) -l$(LIBTSSUTILS) -lcrypto 	\
+LNLIBS += 	-L. -L../utils/.libs -l$(LIBTSS) -l$(LIBTSSUTILS) -lcrypto 	\
 		-ljson-c
 
 # server only libraries

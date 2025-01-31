@@ -51,33 +51,35 @@ all:	$(ALL)
 # shared library
 
 LIBTSS = tss
+LIBTSSUTILS = ibmtssutils
+
 
 # client and server additional libraries
 
 LNLIBS = -lrtas
 #LNLIBS += -lcurl
 
-include makefile-common
+include makefile-common20
 
 INBAND_CLIENT_OBJS := client_ib.o clientPvmLocal_ib.o clientjson_ib.o
 acsPvmClient: $(INBAND_CLIENT_OBJS) \
-			ekutils.o cryptoutils.o commonjson.o clientsocket.o commonutils.o \
-			eventlib.o commontss.o
+			ekutils.o commonjson.o clientsocket.o commonutils.o \
+			 commontss.o
 
 		/usr/bin/gcc $(LNFLAGS) $(INBAND_CLIENT_OBJS) \
-		ekutils.o cryptoutils.o commonjson.o clientsocket.o commonutils.o \
-		eventlib.o commontss.o \
+		ekutils.o commonjson.o clientsocket.o commonutils.o \
+		commontss.o \
 		$(LNLIBS) \
 		-o acsPvmClient
 
 INBAND_ENROLL_OBJS := clientenroll_ib.o clientPvmLocal_ib.o clientjson_ib.o
 acsPvmClientEnroll:	$(INBAND_ENROLL_OBJS) \
-			ekutils.o cryptoutils.o commonjson.o clientsocket.o commonutils.o \
-			eventlib.o commoncrypto.o commontss.o
+			ekutils.o commonjson.o clientsocket.o commonutils.o \
+			commoncrypto.o commontss.o
 
 		/usr/bin/gcc $(LNFLAGS) $(INBAND_ENROLL_OBJS) \
-		ekutils.o cryptoutils.o commonjson.o clientsocket.o commonutils.o \
-		eventlib.o commoncrypto.o commontss.o \
+		ekutils.o commonjson.o clientsocket.o commonutils.o \
+		commoncrypto.o commontss.o \
 		$(LNLIBS) \
 		-o acsPvmClientEnroll
 

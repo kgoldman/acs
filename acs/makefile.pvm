@@ -44,9 +44,7 @@ include makefile-targets
 
 ALL = 
 ALL += $(ALLCLIENT)	
-ALL += $(ALLSERVER)
 ALL += $(ALLPVM)	
-#ALL += $(ALLPHP)	
 
 all:	$(ALL) 
 

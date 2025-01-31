@@ -1089,3 +1089,11 @@ uint32_t getBootTime(char *boottime,
     strncpy(boottime, "0000-00-00 00:00:00", boottimeMax);
     return 0;
 }
+
+TPM_RC getIntermediateCertificate(uint16_t *intermediateCertLength,
+				  unsigned char **intermediateCert)
+{
+    //  PowerVM doesn't support or require intermediate certificates
+    *intermediateCertLength = 0;
+    return 0;
+}
