@@ -105,7 +105,7 @@ Install these packages.
 
 Install these packages. The names may vary with the distro version.
 
-* libjson-c3 or libjson-c4
+* libjson-c3, libjson-c4, or libjson-c5
 * libjson-c-dev
 
 ### Ubuntu Attestation **Server**
